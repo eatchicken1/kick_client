@@ -1,10 +1,15 @@
 <template>
   <div class="anomaly-container">
+    <!-- 未选井时弱提示 -->
+    <el-alert v-if="!currentWellId" type="warning" :closable="false" show-icon class="well-alert">
+      请先在井眼选择中选择井号，再进行综合异常检测。
+    </el-alert>
+
     <!-- 顶部查询表单 -->
     <el-card class="box-card search-card">
       <el-form :inline="true" :model="searchForm" class="demo-form-inline" size="small">
-        <el-form-item label="分析井号">
-          <el-input v-model="searchForm.wellId" placeholder="例如: 大页1H24" clearable></el-input>
+        <el-form-item label="当前井号">
+          <el-tag type="info" size="medium">{{ currentWellId || '未选择' }}</el-tag>
         </el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker
@@ -13,42 +18,64 @@
             range-separator="至"
             start-placeholder="开始时间"
             end-placeholder="结束时间"
-            value-format="yyyy-MM-dd'T'HH:mm:ss"
-            :default-time="['00:00:00', '23:59:59']">
+            format="yyyy-MM-dd HH:mm:ss"
+            value-format="yyyy-MM-dd HH:mm:ss"
+            :default-time="['00:00:00', '23:59:59']"
+            style="width: 380px;">
           </el-date-picker>
         </el-form-item>
 
-        <!-- PTD / MAD 动态阈值高级参数配置（可选，不填使用后端默认值） -->
-        <el-form-item label="高级参数(PTD/MAD)">
-          <el-input
-            v-model.number="searchForm.shortWindow"
-            placeholder="短窗 shortWindow，默认 5"
-            style="width: 150px; margin-right: 8px;" />
-          <el-input
-            v-model.number="searchForm.longWindow"
-            placeholder="长窗 longWindow，默认 50"
-            style="width: 160px; margin-right: 8px;" />
-          <el-input
-            v-model.number="searchForm.madWindow"
-            placeholder="MAD 窗口 madWindow，默认 300"
-            style="width: 190px; margin-right: 8px;" />
-          <el-input
-            v-model.number="searchForm.kFactor"
-            placeholder="K 系数 kFactor，默认 3.0"
-            style="width: 170px;" />
-        </el-form-item>
-        <el-form-item>
-          <span style="font-size: 12px; color: #909399;">
-            如不填写，上述 PTD/MAD 参数将使用系统推荐默认值：短窗 5、长窗 50、MAD=300、K=3.0
-          </span>
-        </el-form-item>
+        <!-- 高级参数 PTD/MAD 折叠 -->
+        <el-collapse class="ptd-collapse">
+          <el-collapse-item title="高级参数 (PTD/MAD)" name="ptd">
+            <el-form-item label="短窗">
+              <el-input
+                v-model.number="searchForm.shortWindow"
+                placeholder="默认 5"
+                style="width: 120px; margin-right: 8px;"
+                type="number"
+                min="1" />
+            </el-form-item>
+            <el-form-item label="长窗">
+              <el-input
+                v-model.number="searchForm.longWindow"
+                placeholder="默认 50"
+                style="width: 120px; margin-right: 8px;"
+                type="number"
+                min="1" />
+            </el-form-item>
+            <el-form-item label="MAD 窗口">
+              <el-input
+                v-model.number="searchForm.madWindow"
+                placeholder="默认 300"
+                style="width: 120px; margin-right: 8px;"
+                type="number"
+                min="1" />
+            </el-form-item>
+            <el-form-item label="K 系数">
+              <el-input
+                v-model.number="searchForm.kFactor"
+                placeholder="默认 3.0"
+                style="width: 120px;"
+                type="number"
+                step="0.1"
+                min="0.01" />
+            </el-form-item>
+            <div class="ptd-hint">如不填写，将使用系统默认值：短窗 5、长窗 50、MAD=300、K=3.0</div>
+          </el-collapse-item>
+        </el-collapse>
 
         <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="fetchData" :loading="loading">
+          <el-button
+            type="primary"
+            icon="el-icon-search"
+            @click="fetchData"
+            :loading="loading"
+            :disabled="!currentWellId">
             开始异常检测
           </el-button>
         </el-form-item>
-        
+
         <!-- 综合状态指示灯 -->
         <el-form-item style="float: right;">
           <div class="status-indicator" :class="globalStatus === 'danger' ? 'danger' : 'safe'">
@@ -72,8 +99,7 @@
 </template>
 
 <script>
-// 请根据您的实际 request 路径进行调整
-import request from '@/utils/request'; 
+import { getPtdEarlyWarningApi } from '@/api/index';
 import * as echarts from 'echarts';
 
 export default {
@@ -82,18 +108,14 @@ export default {
     return {
       loading: false,
       searchForm: {
-        wellId: '大页1H24',
         timeRange: ['2024-10-01 00:00:00', '2024-10-01 03:00:00'],
-        // PTD / MAD 动态阈值算法参数（可选，由用户在前端配置；不填则使用后端默认值）
         shortWindow: null,
         longWindow: null,
         madWindow: null,
         kFactor: null
       },
-      globalStatus: 'safe', // safe | danger
-      chartInstances: [], // 存放所有 ECharts 实例用于联动和销毁
-      
-      // 存储格式化后的绘图数据
+      globalStatus: 'safe',
+      chartInstances: [],
       chartData: {
         times: [],
         spp: [], sppAnomalies: [],
@@ -102,12 +124,36 @@ export default {
         hookLoad: [], hookLoadAnomalies: [],
         torque: [], torqueAnomalies: [],
         rop: [], ropAnomalies: [],
-        kickWarningAreas: [] // 综合异常的背景高亮区域
+        kickWarningAreas: []
       }
     };
   },
+  computed: {
+    currentWellId() {
+      return this.$store.state.jh || '';
+    }
+  },
   mounted() {
     window.addEventListener('resize', this.handleResize);
+    if (this.$store.state.StartTime) {
+      try {
+        const startStr = this.$store.state.StartTime.replace(/\//g, '-');
+        const startDate = new Date(startStr);
+        const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
+        const fmt = (d) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const h = String(d.getHours()).padStart(2, '0');
+          const min = String(d.getMinutes()).padStart(2, '0');
+          const s = String(d.getSeconds()).padStart(2, '0');
+          return `${y}-${m}-${day} ${h}:${min}:${s}`;
+        };
+        this.searchForm.timeRange = [fmt(startDate), fmt(endDate)];
+      } catch (e) {
+        this.searchForm.timeRange = ['2024-10-01 00:00:00', '2024-10-01 03:00:00'];
+      }
+    }
   },
   beforeDestroy() {
     window.removeEventListener('resize', this.handleResize);
@@ -117,62 +163,89 @@ export default {
     handleResize() {
       this.chartInstances.forEach(chart => chart.resize());
     },
-    
-    // 调用后端 API 获取数据
+
     async fetchData() {
-      if (!this.searchForm.wellId || !this.searchForm.timeRange || this.searchForm.timeRange.length < 2) {
-        this.$message.warning("请完整填写井号与时间范围");
+      if (!this.currentWellId) {
+        this.$message.warning('请先在井眼选择中选择井号');
         return;
+      }
+      if (!this.searchForm.timeRange || this.searchForm.timeRange.length < 2) {
+        this.$message.warning('请选择时间范围');
+        return;
+      }
+
+      const { timeRange, shortWindow, longWindow, madWindow, kFactor } = this.searchForm;
+      const params = {
+        wellId: this.currentWellId,
+        startTime: (timeRange[0] || '').toString().replace(' ', 'T'),
+        endTime: (timeRange[1] || '').toString().replace(' ', 'T')
+      };
+
+      const hasShort = this.isValidNumber(shortWindow);
+      const hasLong = this.isValidNumber(longWindow);
+      const hasMad = this.isValidNumber(madWindow);
+      const hasK = this.isValidNumber(kFactor);
+      if (hasShort && shortWindow <= 0) {
+        this.$message.warning('短窗须大于 0');
+        return;
+      }
+      if (hasLong && longWindow <= 0) {
+        this.$message.warning('长窗须大于 0');
+        return;
+      }
+      if (hasMad && madWindow <= 0) {
+        this.$message.warning('MAD 窗口须大于 0');
+        return;
+      }
+      if (hasK && kFactor <= 0) {
+        this.$message.warning('K 系数须大于 0');
+        return;
+      }
+
+      if (hasShort) params.shortWindow = shortWindow;
+      if (hasLong) params.longWindow = longWindow;
+      if (hasMad) params.madWindow = madWindow;
+      if (hasK) params.kFactor = kFactor;
+
+      const allEmpty = !hasShort && !hasLong && !hasMad && !hasK;
+      if (allEmpty) {
+        this.$message.info('PTD/MAD 参数未填写，本次分析将使用系统默认值（短窗 5、长窗 50、MAD=300、K=3.0）。');
       }
 
       this.loading = true;
       try {
-        // 组装基础查询参数
-        const { wellId, timeRange, shortWindow, longWindow, madWindow, kFactor } = this.searchForm;
-        const params = {
-          wellId: wellId,
-          startTime: timeRange[0],
-          endTime: timeRange[1]
-        };
-
-        // 判断是否用户有填写高级参数
-        const hasShort = shortWindow !== null && shortWindow !== undefined && shortWindow !== '' && !Number.isNaN(shortWindow);
-        const hasLong = longWindow !== null && longWindow !== undefined && longWindow !== '' && !Number.isNaN(longWindow);
-        const hasMad = madWindow !== null && madWindow !== undefined && madWindow !== '' && !Number.isNaN(madWindow);
-        const hasK = kFactor !== null && kFactor !== undefined && kFactor !== '' && !Number.isNaN(kFactor);
-        const allEmpty = !hasShort && !hasLong && !hasMad && !hasK;
-
-        // 仅在用户填写时才把参数拼到 Query 中，未填写则完全依赖后端默认值
-        if (hasShort) params.shortWindow = shortWindow;
-        if (hasLong) params.longWindow = longWindow;
-        if (hasMad) params.madWindow = madWindow;
-        if (hasK) params.kFactor = kFactor;
-
-        // 若完全未填写任何 PTD/MAD 参数，给出信息级弱提示，但不打断本次计算
-        if (allEmpty) {
-          this.$message.info("PTD/MAD 参数未填写，本次分析将使用系统默认值（短窗 5、长窗 50、MAD=300、K=3.0）。");
-        }
-
-        const res = await request({
-          url: 'http://localhost:18300/api/Monitor/early-warning/ptd-analysis', // 直接调用后端服务
-          method: 'get',
-          params
-        });
+        const res = await getPtdEarlyWarningApi(params);
 
         if (res && res.success && res.data && res.data.length > 0) {
           this.processChartData(res.data);
           this.renderAllCharts();
-          this.$message.success("分析完成");
+          this.$message.success('分析完成');
+        } else if (res && !res.success) {
+          this.$message.error(res.msg || res.message || '请求失败');
+          this.clearCharts();
         } else {
-          this.$message.info("该时间段内未查询到有效数据");
+          this.$message.info('该时间段内未查询到有效数据');
           this.clearCharts();
         }
       } catch (error) {
-        console.error(error);
-        this.$message.error("获取检测数据失败，请检查网络或后端服务");
+        console.error('PTD 接口异常', error);
+        let msg = '获取检测数据失败，请检查网络或后端服务';
+        if (error && error.response) {
+          const d = error.response.data;
+          if (d && (d.msg || d.message)) msg = d.msg || d.message;
+          else if (error.response.status) msg = `请求失败 (${error.response.status})`;
+        } else if (error && error.message) {
+          msg = error.message;
+        }
+        this.$message.error(msg);
+        this.clearCharts();
       } finally {
         this.loading = false;
       }
+    },
+
+    isValidNumber(v) {
+      return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
     },
 
     // 清洗和组装 ECharts 所需的数据结构
@@ -346,6 +419,31 @@ export default {
 .search-card {
   margin-bottom: 15px;
   border-radius: 8px;
+}
+
+.well-alert {
+  margin-bottom: 12px;
+}
+
+.ptd-collapse {
+  margin-bottom: 8px;
+  border: none;
+}
+
+.ptd-collapse >>> .el-collapse-item__header {
+  border: none;
+  height: 40px;
+}
+
+.ptd-collapse >>> .el-collapse-item__wrap {
+  border: none;
+}
+
+.ptd-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 8px;
+  margin-bottom: 4px;
 }
 
 .status-indicator {

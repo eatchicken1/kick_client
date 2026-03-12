@@ -1,6 +1,8 @@
 import request from '../utils/request';
 
 const URL = "http://localhost:17600/api/";
+// 若综合异常检测 PTD 接口部署在其它端口，可改为例如 "http://localhost:18300/api/"
+const MONITOR_API_BASE = URL;
 //  const URL = "http://39.96.65.89:7780/api/";
 
 const getAddress = (s) => {
@@ -576,6 +578,16 @@ export const wellboremudloss2 = (data) => {
         url: getAddress("WellboreMudLoss/Circulatingmethod"),
         method: 'get',
         params: data,
+    });
+}
+
+// 综合异常检测 PTD 溢流早期预警分析
+export const getPtdEarlyWarningApi = (params) => {
+    return request({
+        url: MONITOR_API_BASE + "Monitor/early-warning/ptd-analysis",
+        method: 'get',
+        timeout: 60000,
+        params: params,
     });
 }
 // //地层孔隙压力计算PpdcpressureCalc
