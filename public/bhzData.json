@@ -1,0 +1,55 @@
+[
+    {
+        "label": "钻头",
+        "id": 1,
+        "children": [
+            {
+                "label": "PDC钻头",
+                "url": "../../../assets/img/yl.jpg",
+                "id": 2
+            },
+            {
+                "label": "牙轮钻头",
+                "url": "../../../assets/img/yl.jpg",
+                "id": 3
+            },
+            {
+                "label": "刮刀转头",
+                "url": "../../../assets/img/gd.jpg",
+                "id": 4
+            }
+        ]
+    },
+    {
+        "label": "扩眼工具",
+        "id": 5,
+        "children": [
+            {
+                "label": "扩眼器",
+                "url": "",
+                "id": 6
+            },
+            {
+                "label": "扩眼钻头",
+                "url": "",
+                "id": 7
+            }
+        ]
+    },
+    {
+        "label": "钻杆",
+        "id": 8,
+        "children": [
+            {
+                "label": "钻杆1",
+                "url": "",
+                "id": 9
+            },
+            {
+                "label": "钻杆2",
+                "url": "",
+                "id": 10
+            }
+        ]
+    }
+]

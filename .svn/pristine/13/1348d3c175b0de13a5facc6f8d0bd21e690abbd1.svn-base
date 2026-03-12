@@ -1,0 +1,153 @@
+{
+    "name": "井身结构图",
+    "type": 1,
+    "maxVerticalHeight": 4670.856348334844,
+    "openTimes": 4,
+    "stratum": [
+        {
+            "minHeight": 0,
+            "maxHeight": 2487,
+            "name": "吐谷鲁群K₁tg"
+        },
+        {
+            "minHeight": 2487,
+            "maxHeight": 2947,
+            "name": "三工河J₁s"
+        },
+        {
+            "minHeight": 2947,
+            "maxHeight": 3483,
+            "name": "八道湾J₁b"
+        },
+        {
+            "minHeight": 3483,
+            "maxHeight": 3824,
+            "name": "白碱滩组T₃b"
+        },
+        {
+            "minHeight": 3824,
+            "maxHeight": 4273,
+            "name": "克拉玛依组T₂k"
+        },
+        {
+            "minHeight": 4273,
+            "maxHeight": 4440,
+            "name": "百口泉组T₁b"
+        },
+        {
+            "minHeight": 4440,
+            "maxHeight": 4602,
+            "name": "上乌尔禾组P₃w"
+        },
+        {
+            "minHeight": 4602,
+            "maxHeight": 4672,
+            "name": "佳木河组P₁j"
+        }
+    ],
+    "density": [
+        {
+            "minDensity": 1.1,
+            "maxDensity": 1.2,
+            "minHeight": 0,
+            "maxHeight": 500
+        },
+        {
+            "minDensity": 1.1,
+            "maxDensity": 1.3,
+            "minHeight": 500,
+            "maxHeight": 4250
+        },
+        {
+            "minDensity": 1.15,
+            "maxDensity": 1.35,
+            "minHeight": 4250,
+            "maxHeight": 4626.89773476807
+        },
+        {
+            "minDensity": 1.15,
+            "maxDensity": 1.35,
+            "minHeight": 4626.89773476807,
+            "maxHeight": 4670.856348334844
+        }
+    ],
+    "pressureCoefficient": [
+        {
+            "value": 1.05,
+            "minHeight": 0,
+            "maxHeight": 2487
+        },
+        {
+            "value": 1.1,
+            "minHeight": 2487,
+            "maxHeight": 4672
+        }
+    ],
+    "data": [
+        {
+            "index": 1,
+            "casingOuterDiameter": 339.72,
+            "boresize": 444.5,
+            "wellDeep": 500,
+            "verticalHeight": 500,
+            "casingTopDeep": 0,
+            "casingBottomDeep": 500,
+            "casingTopHeight": 0,
+            "casingBottomHeight": 500,
+            "cemmentReturnHeight": 0
+        },
+        {
+            "index": 2,
+            "casingOuterDiameter": 244.47,
+            "boresize": 311.1,
+            "wellDeep": 4250,
+            "verticalHeight": 4250,
+            "casingTopDeep": 0,
+            "casingBottomDeep": 4250,
+            "casingTopHeight": 0,
+            "casingBottomHeight": 4250,
+            "cemmentReturnHeight": 2800
+        },
+        {
+            "index": 3,
+            "casingOuterDiameter": 177.8,
+            "boresize": 215.9,
+            "wellDeep": 4916,
+            "verticalHeight": 4626.89773476807,
+            "casingTopDeep": 0,
+            "casingBottomDeep": 4916,
+            "casingTopHeight": 0,
+            "casingBottomHeight": 4626.89773476807,
+            "cemmentReturnHeight": 2000
+        },
+        {
+            "index": 4,
+            "casingOuterDiameter": 0,
+            "boresize": 152.4,
+            "wellDeep": 5721,
+            "verticalHeight": 4670.856348334844,
+            "casingTopDeep": 0,
+            "casingBottomDeep": 5721,
+            "casingTopHeight": 0,
+            "casingBottomHeight": 4670.856348334844,
+            "cemmentReturnHeight": 0
+        }
+    ],
+    "keyPoints": [
+        {
+            "type": 1,
+            "height": 4280,
+            "deep": 4280
+        },
+        {
+            "type": 1,
+            "height": 4626.91,
+            "deep": 4916.22
+        },
+        {
+            "type": 1,
+            "height": 4670.87,
+            "deep": 5721.25
+        }
+    ]
+}
