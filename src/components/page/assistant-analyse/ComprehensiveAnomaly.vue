@@ -1,15 +1,13 @@
 <template>
-  <div class="anomaly-container">
-    <!-- 未选井时弱提示 -->
+  <div class="anomaly-container" ref="container">
     <el-alert v-if="!currentWellId" type="warning" :closable="false" show-icon class="well-alert">
-      请先在井眼选择中选择井号，再进行综合异常检测。
+      请先在井眼选择中选择井号，再进行综合溢流异常检测。
     </el-alert>
 
-    <!-- 顶部查询表单 -->
-    <el-card class="box-card search-card">
+    <el-card class="box-card search-card" shadow="hover">
       <el-form :inline="true" :model="searchForm" class="demo-form-inline" size="small">
         <el-form-item label="当前井号">
-          <el-tag type="info" size="medium">{{ currentWellId || '未选择' }}</el-tag>
+          <el-tag type="info" size="medium" effect="dark">{{ currentWellId || '未选择' }}</el-tag>
         </el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker
@@ -21,79 +19,85 @@
             format="yyyy-MM-dd HH:mm:ss"
             value-format="yyyy-MM-dd HH:mm:ss"
             :default-time="['00:00:00', '23:59:59']"
-            style="width: 380px;">
+            style="width: 360px;">
           </el-date-picker>
         </el-form-item>
 
-        <!-- 高级参数 PTD/MAD 折叠 -->
-        <el-collapse class="ptd-collapse">
-          <el-collapse-item title="高级参数 (PTD/MAD)" name="ptd">
+        <el-collapse class="ptd-collapse" accordion>
+          <el-collapse-item title="⚙️ 高级算法参数 (PTD & 动态MAD)" name="ptd">
             <el-form-item label="短窗">
-              <el-input
-                v-model.number="searchForm.shortWindow"
-                placeholder="默认 5"
-                style="width: 120px; margin-right: 8px;"
-                type="number"
-                min="1" />
+              <el-input v-model.number="searchForm.shortWindow" placeholder="默认 10" style="width: 100px;" type="number" min="1" />
             </el-form-item>
             <el-form-item label="长窗">
-              <el-input
-                v-model.number="searchForm.longWindow"
-                placeholder="默认 50"
-                style="width: 120px; margin-right: 8px;"
-                type="number"
-                min="1" />
+              <el-input v-model.number="searchForm.longWindow" placeholder="默认 100" style="width: 100px;" type="number" min="1" />
             </el-form-item>
             <el-form-item label="MAD 窗口">
-              <el-input
-                v-model.number="searchForm.madWindow"
-                placeholder="默认 300"
-                style="width: 120px; margin-right: 8px;"
-                type="number"
-                min="1" />
+              <el-input v-model.number="searchForm.madWindow" placeholder="默认 500" style="width: 100px;" type="number" min="1" />
             </el-form-item>
             <el-form-item label="K 系数">
-              <el-input
-                v-model.number="searchForm.kFactor"
-                placeholder="默认 3.0"
-                style="width: 120px;"
-                type="number"
-                step="0.1"
-                min="0.01" />
+              <el-input v-model.number="searchForm.kFactor" placeholder="默认 2.0" style="width: 100px;" type="number" step="0.1" />
             </el-form-item>
-            <div class="ptd-hint">如不填写，将使用系统默认值：短窗 5、长窗 50、MAD=300、K=3.0</div>
+            <div class="ptd-hint">注：基于《深井超深井溢流早期风险评估方法研究》机理，推荐默认参数为：短窗10, 长窗100, MAD=500, K=2.0</div>
           </el-collapse-item>
         </el-collapse>
 
-        <el-form-item>
-          <el-button
-            type="primary"
-            icon="el-icon-search"
-            @click="fetchData"
-            :loading="loading"
-            :disabled="!currentWellId">
-            开始异常检测
+        <el-form-item style="margin-top: 10px;">
+          <el-button type="primary" icon="el-icon-odometer" @click="fetchData" :loading="loading" :disabled="!currentWellId">
+            启动 PTD 机理协同深度分析
           </el-button>
-        </el-form-item>
-
-        <!-- 综合状态指示灯 -->
-        <el-form-item style="float: right;">
-          <div class="status-indicator" :class="globalStatus === 'danger' ? 'danger' : 'safe'">
-            <i :class="globalStatus === 'danger' ? 'el-icon-warning' : 'el-icon-success'"></i>
-            综合检测状态：{{ globalStatus === 'danger' ? '发现高风险溢流异常！' : '井下状态平稳' }}
-          </div>
         </el-form-item>
       </el-form>
     </el-card>
 
-    <!-- 六宫格工程图表展示区 -->
-    <div class="chart-grid" v-loading="loading" element-loading-text="正在进行机理协同异常分析...">
-      <div class="chart-item" ref="chartSpp"></div>
-      <div class="chart-item" ref="chartFlow"></div>
-      <div class="chart-item" ref="chartVolume"></div>
-      <div class="chart-item" ref="chartHookLoad"></div>
-      <div class="chart-item" ref="chartTorque"></div>
-      <div class="chart-item" ref="chartRop"></div>
+    <el-row :gutter="15" class="dashboard-panel" v-if="hasData">
+      <el-col :span="8">
+        <div class="status-card" :class="globalStatus === 'danger' ? 'danger-bg' : 'safe-bg'">
+          <div class="status-icon">
+            <i :class="globalStatus === 'danger' ? 'el-icon-warning' : 'el-icon-success'"></i>
+          </div>
+          <div class="status-info">
+            <div class="status-title">综合预警状态</div>
+            <div class="status-text">{{ globalStatus === 'danger' ? '⚠️ 发现高风险溢流异常！' : '✅ 井筒压力平衡状态平稳' }}</div>
+            <div class="status-mechanism" v-if="globalStatus === 'danger'">
+              触发机理: <strong>立压异常下降</strong> 且 <strong>流量/池体积异常上升</strong>
+            </div>
+          </div>
+        </div>
+      </el-col>
+      <el-col :span="16">
+        <el-card shadow="never" class="stats-card">
+          <div slot="header" class="clearfix">
+            <span>📊 核心检测参数统计摘要 (算法突破点数 / 占比)</span>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="label">立压 (SPP) 异常:</span>
+              <span class="value" :class="{'text-danger': stats.sppAnomalies > 0}">{{ stats.sppAnomalies }} 点 ({{ stats.sppRate }}%)</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">出口流量异常:</span>
+              <span class="value" :class="{'text-danger': stats.flowAnomalies > 0}">{{ stats.flowAnomalies }} 点 ({{ stats.flowRate }}%)</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">总池体积异常:</span>
+              <span class="value" :class="{'text-danger': stats.volAnomalies > 0}">{{ stats.volAnomalies }} 点 ({{ stats.volRate }}%)</span>
+            </div>
+            <div class="stat-item">
+              <span class="label">溢流高危区间:</span>
+              <span class="value text-danger" style="font-weight: bold;">{{ stats.warningIntervals }} 个</span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <div class="chart-list" v-loading="loading" element-loading-text="正在绘制多维参数特征曲线..." element-loading-spinner="el-icon-loading" v-if="hasData">
+      <div class="chart-item-large" ref="chartSpp"></div>
+      <div class="chart-item-large" ref="chartFlow"></div>
+      <div class="chart-item-large" ref="chartVolume"></div>
+      <div class="chart-item-large" ref="chartHookLoad"></div>
+      <div class="chart-item-large" ref="chartTorque"></div>
+      <div class="chart-item-large" ref="chartRop"></div>
     </div>
   </div>
 </template>
@@ -107,6 +111,7 @@ export default {
   data() {
     return {
       loading: false,
+      hasData: false,
       searchForm: {
         timeRange: ['2024-10-01 00:00:00', '2024-10-01 03:00:00'],
         shortWindow: null,
@@ -115,17 +120,24 @@ export default {
         kFactor: null
       },
       globalStatus: 'safe',
+      stats: {
+        sppAnomalies: 0, sppRate: 0,
+        flowAnomalies: 0, flowRate: 0,
+        volAnomalies: 0, volRate: 0,
+        warningIntervals: 0
+      },
       chartInstances: [],
       chartData: {
         times: [],
-        spp: [], sppAnomalies: [],
-        flow: [], flowAnomalies: [],
-        volume: [], volumeAnomalies: [],
-        hookLoad: [], hookLoadAnomalies: [],
-        torque: [], torqueAnomalies: [],
-        rop: [], ropAnomalies: [],
+        spp: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        flow: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        volume: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        hookLoad: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        torque: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        rop: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
         kickWarningAreas: []
-      }
+      },
+      resizeObserver: null // 用于监听侧边栏折叠导致的 DOM 宽度变化
     };
   },
   computed: {
@@ -134,7 +146,7 @@ export default {
     }
   },
   mounted() {
-    window.addEventListener('resize', this.handleResize);
+    // 初始化时间范围
     if (this.$store.state.StartTime) {
       try {
         const startStr = this.$store.state.StartTime.replace(/\//g, '-');
@@ -154,25 +166,36 @@ export default {
         this.searchForm.timeRange = ['2024-10-01 00:00:00', '2024-10-01 03:00:00'];
       }
     }
+
+    // 问题3修复：使用 ResizeObserver 监听容器真实宽度变化，完美适配侧边栏折叠
+    this.resizeObserver = new ResizeObserver(() => {
+      this.handleResize();
+    });
+    if (this.$refs.container) {
+      this.resizeObserver.observe(this.$refs.container);
+    }
   },
   beforeDestroy() {
-    window.removeEventListener('resize', this.handleResize);
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+    }
     this.chartInstances.forEach(chart => chart.dispose());
   },
   methods: {
     handleResize() {
-      this.chartInstances.forEach(chart => chart.resize());
+      // 优化：使用 requestAnimationFrame 防抖，保证重绘流畅
+      requestAnimationFrame(() => {
+        this.chartInstances.forEach(chart => chart.resize());
+      });
+    },
+
+    isValidNumber(v) {
+      return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
     },
 
     async fetchData() {
-      if (!this.currentWellId) {
-        this.$message.warning('请先在井眼选择中选择井号');
-        return;
-      }
-      if (!this.searchForm.timeRange || this.searchForm.timeRange.length < 2) {
-        this.$message.warning('请选择时间范围');
-        return;
-      }
+      if (!this.currentWellId) return this.$message.warning('请先在井眼选择中选择井号');
+      if (!this.searchForm.timeRange || this.searchForm.timeRange.length < 2) return this.$message.warning('请选择时间范围');
 
       const { timeRange, shortWindow, longWindow, madWindow, kFactor } = this.searchForm;
       const params = {
@@ -181,228 +204,245 @@ export default {
         endTime: (timeRange[1] || '').toString().replace(' ', 'T')
       };
 
-      const hasShort = this.isValidNumber(shortWindow);
-      const hasLong = this.isValidNumber(longWindow);
-      const hasMad = this.isValidNumber(madWindow);
-      const hasK = this.isValidNumber(kFactor);
-      if (hasShort && shortWindow <= 0) {
-        this.$message.warning('短窗须大于 0');
-        return;
-      }
-      if (hasLong && longWindow <= 0) {
-        this.$message.warning('长窗须大于 0');
-        return;
-      }
-      if (hasMad && madWindow <= 0) {
-        this.$message.warning('MAD 窗口须大于 0');
-        return;
-      }
-      if (hasK && kFactor <= 0) {
-        this.$message.warning('K 系数须大于 0');
-        return;
-      }
-
-      if (hasShort) params.shortWindow = shortWindow;
-      if (hasLong) params.longWindow = longWindow;
-      if (hasMad) params.madWindow = madWindow;
-      if (hasK) params.kFactor = kFactor;
-
-      const allEmpty = !hasShort && !hasLong && !hasMad && !hasK;
-      if (allEmpty) {
-        this.$message.info('PTD/MAD 参数未填写，本次分析将使用系统默认值（短窗 5、长窗 50、MAD=300、K=3.0）。');
-      }
+      if (this.isValidNumber(shortWindow)) params.shortWindow = shortWindow;
+      if (this.isValidNumber(longWindow)) params.longWindow = longWindow;
+      if (this.isValidNumber(madWindow)) params.madWindow = madWindow;
+      if (this.isValidNumber(kFactor)) params.kFactor = kFactor;
 
       this.loading = true;
-      try {
-        const res = await getPtdEarlyWarningApi(params);
-
-        if (res && res.success && res.data && res.data.length > 0) {
-          this.processChartData(res.data);
-          this.renderAllCharts();
-          this.$message.success('分析完成');
-        } else if (res && !res.success) {
-          this.$message.error(res.msg || res.message || '请求失败');
+      this.hasData = false;
+      
+      this.$nextTick(async () => {
+        try {
+          const res = await getPtdEarlyWarningApi(params);
+          if (res && res.success && res.data && res.data.length > 0) {
+            this.hasData = true;
+            this.processChartData(res.data);
+            this.$nextTick(() => { 
+              this.renderAllCharts();
+              this.$message.success('多维算法分析完成');
+            });
+          } else {
+            this.$message.info('该时间段内未查询到有效数据');
+            this.clearCharts();
+          }
+        } catch (error) {
+          console.error('PTD 接口异常', error);
+          this.$message.error('获取检测数据失败，请检查后端计算引擎');
           this.clearCharts();
-        } else {
-          this.$message.info('该时间段内未查询到有效数据');
-          this.clearCharts();
+        } finally {
+          this.loading = false;
         }
-      } catch (error) {
-        console.error('PTD 接口异常', error);
-        let msg = '获取检测数据失败，请检查网络或后端服务';
-        if (error && error.response) {
-          const d = error.response.data;
-          if (d && (d.msg || d.message)) msg = d.msg || d.message;
-          else if (error.response.status) msg = `请求失败 (${error.response.status})`;
-        } else if (error && error.message) {
-          msg = error.message;
-        }
-        this.$message.error(msg);
-        this.clearCharts();
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
-    isValidNumber(v) {
-      return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
-    },
-
-    // 清洗和组装 ECharts 所需的数据结构
     processChartData(data) {
-      // 重置数据
+      const resetParam = () => ({ orig: [], ptd: [], upper: [], lower: [], anomalies: [] });
+      
       this.chartData = {
         times: [],
-        spp: [], sppAnomalies: [],
-        flow: [], flowAnomalies: [],
-        volume: [], volumeAnomalies: [],
-        hookLoad: [], hookLoadAnomalies: [],
-        torque: [], torqueAnomalies: [],
-        rop: [], ropAnomalies: [],
+        spp: resetParam(), flow: resetParam(), volume: resetParam(),
+        hookLoad: resetParam(), torque: resetParam(), rop: resetParam(),
         kickWarningAreas: []
       };
 
-      let inWarning = false;
-      let warningStart = null;
-      let hasGlobalDanger = false;
+      let inWarning = false, warningStart = null;
+      let globalDangerCount = 0, sppErr = 0, flowErr = 0, volErr = 0;
+      const totalCount = data.length;
+
+      const extract = (paramKey, itemData, index, isSpp, isFlow, isVol) => {
+        this.chartData[paramKey].orig.push(itemData.originalValue);
+        this.chartData[paramKey].ptd.push(itemData.ptdValue);
+        this.chartData[paramKey].upper.push(itemData.upperThreshold);
+        this.chartData[paramKey].lower.push(itemData.lowerThreshold);
+
+        if (itemData.isAnomaly) {
+          this.chartData[paramKey].anomalies.push([index, itemData.ptdValue]);
+          if (isSpp) sppErr++;
+          if (isFlow) flowErr++;
+          if (isVol) volErr++;
+        }
+      };
 
       data.forEach((item, index) => {
-        const time = item.logTime.replace('T', ' '); // 处理 ISO 时间
+        const time = item.logTime.replace('T', ' '); 
         this.chartData.times.push(time);
 
-        // 1. 组装折线原始数据
-        this.chartData.spp.push(item.spp.originalValue);
-        this.chartData.flow.push(item.outletFlow.originalValue);
-        this.chartData.volume.push(item.poolVolume.originalValue);
-        this.chartData.hookLoad.push(item.hookLoad.originalValue);
-        this.chartData.torque.push(item.torque.originalValue);
-        this.chartData.rop.push(item.rop.originalValue);
+        extract('spp', item.spp, index, true, false, false);
+        extract('flow', item.outletFlow, index, false, true, false);
+        extract('volume', item.poolVolume, index, false, false, true);
+        extract('hookLoad', item.hookLoad, index, false, false, false);
+        extract('torque', item.torque, index, false, false, false);
+        extract('rop', item.rop, index, false, false, false);
 
-        // 2. 组装单参数局部异常点（如果 isAnomaly 为 true，记录 [索引, 值]，否则为空）
-        // 这里隐去了 PTD 概念，只展示“该点有异常”
-        if (item.spp.isAnomaly) this.chartData.sppAnomalies.push([index, item.spp.originalValue]);
-        if (item.outletFlow.isAnomaly) this.chartData.flowAnomalies.push([index, item.outletFlow.originalValue]);
-        if (item.poolVolume.isAnomaly) this.chartData.volumeAnomalies.push([index, item.poolVolume.originalValue]);
-        if (item.hookLoad.isAnomaly) this.chartData.hookLoadAnomalies.push([index, item.hookLoad.originalValue]);
-        if (item.torque.isAnomaly) this.chartData.torqueAnomalies.push([index, item.torque.originalValue]);
-        if (item.rop.isAnomaly) this.chartData.ropAnomalies.push([index, item.rop.originalValue]);
-
-        // 3. 计算“综合异常警报”的连续区间 (MarkArea)
         if (item.isKickWarning) {
-          hasGlobalDanger = true;
-          if (!inWarning) {
-            inWarning = true;
-            warningStart = time;
-          }
+          if (!inWarning) { inWarning = true; warningStart = time; }
         } else {
           if (inWarning) {
             inWarning = false;
-            // 闭合一个异常区间
-            this.chartData.kickWarningAreas.push([
-              { xAxis: warningStart },
-              { xAxis: data[index - 1].logTime.replace('T', ' ') }
-            ]);
+            this.chartData.kickWarningAreas.push([{ xAxis: warningStart }, { xAxis: data[index - 1].logTime.replace('T', ' ') }]);
+            globalDangerCount++;
           }
         }
       });
 
-      // 处理最后一直处于异常状态的情况
       if (inWarning) {
-        this.chartData.kickWarningAreas.push([
-          { xAxis: warningStart },
-          { xAxis: data[data.length - 1].logTime.replace('T', ' ') }
-        ]);
+        this.chartData.kickWarningAreas.push([{ xAxis: warningStart }, { xAxis: data[totalCount - 1].logTime.replace('T', ' ') }]);
+        globalDangerCount++;
       }
 
-      this.globalStatus = hasGlobalDanger ? 'danger' : 'safe';
+      this.globalStatus = globalDangerCount > 0 ? 'danger' : 'safe';
+      this.stats = {
+        sppAnomalies: sppErr, sppRate: ((sppErr / totalCount) * 100).toFixed(1),
+        flowAnomalies: flowErr, flowRate: ((flowErr / totalCount) * 100).toFixed(1),
+        volAnomalies: volErr, volRate: ((volErr / totalCount) * 100).toFixed(1),
+        warningIntervals: globalDangerCount
+      };
     },
 
-    // 渲染所有图表
     renderAllCharts() {
       this.chartInstances.forEach(chart => chart.dispose());
       this.chartInstances = [];
 
       const { times, kickWarningAreas } = this.chartData;
-
-      // 定义公共 MarkArea 配置 (用于所有图表的综合预警红色背景)
-      const commonMarkArea = {
+      
+      // 问题2修复：去掉了容易重叠的 label，背景色加深，结合全局图例展示
+      const kickMarkArea = {
         itemStyle: { color: 'rgba(255, 77, 79, 0.15)' },
-        label: { show: true, position: 'insideTop', color: '#ff4d4f', formatter: '综合异常' },
+        label: { show: false }, 
         data: kickWarningAreas
       };
 
-      // 渲染 6 个维度的图表
-      this.initSingleChart(this.$refs.chartSpp, '立压 (MPa)', '#3aa1ff', times, this.chartData.spp, this.chartData.sppAnomalies, commonMarkArea);
-      this.initSingleChart(this.$refs.chartFlow, '出口流量 (%)', '#36cbcb', times, this.chartData.flow, this.chartData.flowAnomalies, commonMarkArea);
-      this.initSingleChart(this.$refs.chartVolume, '总池体积 (m³)', '#4ecb73', times, this.chartData.volume, this.chartData.volumeAnomalies, commonMarkArea);
-      this.initSingleChart(this.$refs.chartHookLoad, '钩载 (kN)', '#fbd437', times, this.chartData.hookLoad, this.chartData.hookLoadAnomalies, commonMarkArea);
-      this.initSingleChart(this.$refs.chartTorque, '扭矩 (kN.m)', '#f2637b', times, this.chartData.torque, this.chartData.torqueAnomalies, commonMarkArea);
-      this.initSingleChart(this.$refs.chartRop, '钻时 (min/m)', '#975fe4', times, this.chartData.rop, this.chartData.ropAnomalies, commonMarkArea, true); // 钻时通常是反向看的，但此处保留常规
+      this.initChart(this.$refs.chartSpp, '立压 SPP (MPa)', '#1890ff', times, this.chartData.spp, kickMarkArea);
+      this.initChart(this.$refs.chartFlow, '出口流量 Flow (%)', '#13c2c2', times, this.chartData.flow, kickMarkArea);
+      this.initChart(this.$refs.chartVolume, '总池体积 Volume (m³)', '#52c41a', times, this.chartData.volume, kickMarkArea);
+      this.initChart(this.$refs.chartHookLoad, '钩载 HKLA (kN)', '#faad14', times, this.chartData.hookLoad, kickMarkArea);
+      this.initChart(this.$refs.chartTorque, '扭矩 Torque (kN.m)', '#f5222d', times, this.chartData.torque, kickMarkArea);
+      this.initChart(this.$refs.chartRop, '钻时 ROP (min/m)', '#722ed1', times, this.chartData.rop, kickMarkArea, true);
 
-      // 开启多图表 Tooltip 和 DataZoom 联动
       echarts.connect(this.chartInstances);
     },
 
-    // 封装通用图表初始化函数
-    initSingleChart(domRef, title, color, xData, yData, anomalyData, markArea, isInverse = false) {
+    initChart(domRef, title, origColor, xData, dataset, markArea, isInverse = false) {
+      if (!domRef) return;
       const chart = echarts.init(domRef);
+      
       const option = {
-        title: { 
-            text: title, 
-            left: 10, 
-            top: 10, 
-            textStyle: { fontSize: 14, color: '#666' }
+        // 问题1修复：调整标题位置，防止与Y轴文字重叠
+        title: { text: title, left: 15, top: 18, textStyle: { fontSize: 15, color: '#333', fontWeight: 'bold' } },
+        tooltip: { 
+          trigger: 'axis', 
+          axisPointer: { type: 'cross' },
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderColor: '#e2e8f0',
+          borderWidth: 1,
+          textStyle: { color: '#334155' }
         },
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'cross' }
+        legend: {
+          data: ['原始测量值', 'PTD偏离度', 'MAD动态上限', 'MAD动态下限', '溢流高危区'],
+          top: 18,
+          right: 20
         },
-        grid: { left: '8%', right: '3%', bottom: '15%', top: '25%' },
+        // 问题1修复：加大 top/left/right，给图注和Y轴标题充足的空间
+        grid: { left: '60px', right: '60px', bottom: '45px', top: '75px' }, 
         dataZoom: [
           { type: 'inside', xAxisIndex: 0, filterMode: 'filter' },
-          { type: 'slider', xAxisIndex: 0, height: 12, bottom: 5 }
+          { type: 'slider', xAxisIndex: 0, height: 15, bottom: 5, borderColor: 'transparent', backgroundColor: '#f5f5f5', handleSize: '100%' }
         ],
         xAxis: {
           type: 'category',
           data: xData,
           boundaryGap: false,
-          axisLine: { lineStyle: { color: '#ccc' } }
+          axisLabel: { color: '#64748b', formatter: (val) => val.split(' ')[1] } 
         },
-        yAxis: {
-          type: 'value',
-          inverse: isInverse,
-          splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
-          axisLine: { show: true, lineStyle: { color: '#ccc' } }
-        },
-        series: [
-          // 1. 正常工程折线
+        yAxis: [
           {
-            name: title.split(' ')[0],
+            type: 'value',
+            name: '原始值',
+            nameTextStyle: { align: 'right', padding: [0, 5, 0, 0] }, // 让文字靠右对齐，避开title
+            scale: true, 
+            inverse: isInverse,
+            axisLabel: { color: origColor, fontWeight: 'bold' },
+            splitLine: { show: false } 
+          },
+          {
+            type: 'value',
+            name: 'PTD基线',
+            nameTextStyle: { align: 'left', padding: [0, 0, 0, 5] },
+            scale: true, 
+            position: 'right',
+            axisLabel: { color: '#eab308' },
+            splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }
+          }
+        ],
+        series: [
+          {
+            name: '原始测量值',
             type: 'line',
-            data: yData,
+            yAxisIndex: 0, 
+            data: dataset.orig,
             smooth: true,
             symbol: 'none',
-            lineStyle: { width: 2, color: color },
-            itemStyle: { color: color },
-            markArea: markArea // 注入全局异常红带
+            // 问题4修复：显式指明 itemStyle 的 color，确保 Legend 颜色与曲线强一致
+            itemStyle: { color: origColor },
+            lineStyle: { width: 3, color: origColor, shadowBlur: 5, shadowColor: 'rgba(0,0,0,0.1)' },
+            markArea: markArea
           },
-          // 2. 单参数异常红点 (隐去PTD算法细节，仅显示结果)
           {
-            name: '参数异常波动',
+            name: 'PTD偏离度',
+            type: 'line',
+            yAxisIndex: 1, 
+            data: dataset.ptd,
+            smooth: false,
+            symbol: 'none',
+            itemStyle: { color: '#eab308' }, // 问题4修复：同步 Legend 颜色
+            lineStyle: { width: 2, color: '#eab308' } 
+          },
+          {
+            name: 'MAD动态上限',
+            type: 'line',
+            yAxisIndex: 1,
+            data: dataset.upper,
+            symbol: 'none',
+            itemStyle: { color: '#ef4444' }, // 问题4修复：同步 Legend 颜色
+            lineStyle: { width: 1.5, type: 'dashed', color: '#ef4444' } 
+          },
+          {
+            name: 'MAD动态下限',
+            type: 'line',
+            yAxisIndex: 1,
+            data: dataset.lower,
+            symbol: 'none',
+            itemStyle: { color: '#22c55e' }, // 问题4修复：同步 Legend 颜色
+            lineStyle: { width: 1.5, type: 'dashed', color: '#22c55e' } 
+          },
+          {
+            name: '突破阈值(异常)',
             type: 'scatter',
-            data: anomalyData,
-            itemStyle: { color: '#ff4d4f', borderColor: '#fff', borderWidth: 1 },
-            symbolSize: 6,
+            yAxisIndex: 1,
+            data: dataset.anomalies,
+            itemStyle: { color: '#ef4444', shadowBlur: 8, shadowColor: 'rgba(239, 68, 68, 0.6)' },
+            symbolSize: 8,
             zlevel: 10
+          },
+          {
+            // 问题2补充：专为“溢流高危区”伪造一个空系列，以便在图例中展示对应的淡红色块解释
+            name: '溢流高危区',
+            type: 'line',
+            itemStyle: { color: 'rgba(255, 77, 79, 0.5)' },
+            lineStyle: { width: 0 }, 
+            data: []
           }
         ]
       };
+      
       chart.setOption(option);
       this.chartInstances.push(chart);
     },
 
     clearCharts() {
        this.chartInstances.forEach(chart => chart.clear());
+       this.hasData = false;
        this.globalStatus = 'safe';
     }
   }
@@ -412,88 +452,77 @@ export default {
 <style scoped>
 .anomaly-container {
   padding: 15px;
-  background-color: #f0f2f5;
+  background-color: #f1f5f9; 
   min-height: 100vh;
+  /* 确保容器宽度随外层布局自动拉伸 */
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.search-card {
-  margin-bottom: 15px;
-  border-radius: 8px;
+.search-card { margin-bottom: 15px; border-radius: 8px; border: none; }
+.well-alert { margin-bottom: 12px; }
+
+.ptd-collapse { border: none; margin-bottom: 5px; }
+.ptd-collapse >>> .el-collapse-item__header { border: none; height: 36px; color: #3b82f6; font-weight: bold; background: transparent; }
+.ptd-collapse >>> .el-collapse-item__wrap { border: none; background-color: #f8fafc; padding: 10px; border-radius: 6px; }
+.ptd-hint { font-size: 12px; color: #f59e0b; clear: both; }
+
+/* 态势感知仪表盘 */
+.dashboard-panel { margin-bottom: 15px; }
+
+.status-card {
+  display: flex; align-items: center; padding: 20px; border-radius: 8px; height: 100px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: all 0.3s;
 }
 
-.well-alert {
-  margin-bottom: 12px;
+.safe-bg { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
+.danger-bg { background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border: 1px solid #fecaca; animation: pulse-border 2s infinite; }
+
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
-.ptd-collapse {
-  margin-bottom: 8px;
-  border: none;
-}
+.status-icon i { font-size: 48px; margin-right: 15px; }
+.safe-bg .status-icon i { color: #22c55e; }
+.danger-bg .status-icon i { color: #ef4444; }
 
-.ptd-collapse >>> .el-collapse-item__header {
-  border: none;
-  height: 40px;
-}
+.status-info { display: flex; flex-direction: column; }
+.status-title { font-size: 13px; color: #64748b; margin-bottom: 4px; }
+.status-text { font-size: 18px; font-weight: bold; color: #0f172a; }
+.danger-bg .status-text { color: #b91c1c; }
+.status-mechanism { font-size: 12px; color: #ef4444; margin-top: 5px; background: rgba(255, 255, 255, 0.7); padding: 2px 8px; border-radius: 4px; font-weight: 500;}
 
-.ptd-collapse >>> .el-collapse-item__wrap {
-  border: none;
-}
+/* 统计卡片 */
+.stats-card { height: 142px; border-radius: 8px; border: none; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+.stats-card >>> .el-card__header { padding: 12px 15px; background: #ffffff; font-weight: bold; font-size: 14px; color: #334155; border-bottom: 1px solid #e2e8f0; }
+.stats-card >>> .el-card__body { padding: 15px; }
+.stats-grid { display: flex; justify-content: space-between; align-items: center; height: 100%;}
+.stat-item { text-align: center; display: flex; flex-direction: column; gap: 8px;}
+.stat-item .label { font-size: 13px; color: #64748b; }
+.stat-item .value { font-size: 20px; font-weight: bold; color: #0f172a; font-family: monospace;}
+.text-danger { color: #ef4444 !important; }
 
-.ptd-hint {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 8px;
-  margin-bottom: 4px;
-}
-
-.status-indicator {
-  padding: 8px 20px;
-  border-radius: 4px;
-  font-weight: bold;
-  font-size: 15px;
+/* 瀑布流图表区 */
+.chart-list {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 20px; 
+  width: 100%;
 }
 
-.status-indicator.safe {
-  background-color: #f6ffed;
-  color: #52c41a;
-  border: 1px solid #b7eb8f;
-}
-
-.status-indicator.danger {
-  background-color: #fff2f0;
-  color: #ff4d4f;
-  border: 1px solid #ffccc7;
-  animation: flash 1.5s infinite;
-}
-
-@keyframes flash {
-  0% { box-shadow: 0 0 5px #ff4d4f; }
-  50% { box-shadow: 0 0 15px #ff4d4f; }
-  100% { box-shadow: 0 0 5px #ff4d4f; }
-}
-
-.chart-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(3, 300px);
-  gap: 15px;
-}
-
-.chart-item {
+.chart-item-large {
+  width: 100%;
+  height: 380px; 
   background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  padding: 10px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
 }
 
-/* 响应式调整 */
-@media screen and (max-width: 1200px) {
-  .chart-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(6, 300px);
-  }
+@media screen and (max-width: 1400px) {
+  .dashboard-panel .el-col { width: 100%; margin-bottom: 15px; }
+  .chart-item-large { height: 350px; }
 }
 </style>
