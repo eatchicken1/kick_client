@@ -1,6 +1,6 @@
 <template>
     <div>
-        <h1 class="h1">事故复杂预警子系统</h1>
+        <h1 class="h1">早期溢流智能预警系统</h1>
         <el-header>西南石油大学</el-header>
         <el-divider>选择井眼</el-divider>
         <el-container>

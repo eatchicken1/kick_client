@@ -3,12 +3,12 @@
         <div align="center" class="title">
             <div style="width: 100%">
                 <!-- <img style="width: 10%; height: 20%" src="../../assets/logo.jpg" /> -->
-                <h1 >事故复杂预警子系统</h1>
+                <h1 >早期溢流智能预警系统</h1>
                 <div style="font-size: 25px">新疆油田</div>
             </div>
         </div>
         <div class="ms-login">
-            <div class="ms-title">事故复杂预警子系统</div>
+            <div class="ms-title">早期溢流智能预警系统</div>
             <el-form :model="param" :rules="rules" ref="login" label-width="0px" class="ms-content">
                 <el-form-item prop="username">
                     <el-input v-model="param.username" placeholder="username">

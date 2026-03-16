@@ -5,7 +5,7 @@
             <i v-if="!collapse" class="el-icon-s-fold"></i>
             <i v-else class="el-icon-s-unfold"></i>
         </div>
-        <div class="logo">事故复杂预警子系统<span style="font-size:15px">—{{jh}}</span></div>
+        <div class="logo">早期溢流智能预警系统<span style="font-size:15px">—{{jh}}</span></div>
         <div class="header-right">
             <div class="header-user-con">
                 <!-- 全局计算参数设置 -->

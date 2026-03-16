@@ -1,7 +1,7 @@
 <template>
     <div>
         <div align="center">
-            <h1 style="margin-top: 50px"><i class="el-icon-s-custom"></i>欢迎使用《事故复杂预警子系统》</h1>
+            <h1 style="margin-top: 50px"><i class="el-icon-s-custom"></i>欢迎使用《早期溢流智能预警系统》</h1>
             <div style="font-size:30px">新疆油田</div>
             <div style="margin-top: 50px; width: 1200px; height: 600px">
                 <el-carousel indicator-position="outside" :autoplay="true" :interval="15000" :loop="true" height="500px">

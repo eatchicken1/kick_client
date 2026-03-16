@@ -170,12 +170,12 @@ export default new Router({
                     , {
                         path: 'overflow',
                         component: () => import('../components/page/Earlywarning.vue'),
-                        meta: { title: '事故复杂实时预警' }
+                        meta: { title: '溢流实时预警' }
                     },
                     {
                         path: 'overflow2',
                         component: () => import('../components/page/Earlywarning2.vue'),
-                        meta: { title: '事故复杂实时预警' }
+                        meta: { title: '溢流实时预警' }
                     },
                      {
                         path: 'porepressure',
@@ -200,6 +200,11 @@ export default new Router({
                         path: 'ComprehensiveAnomaly',
                         component: () => import('../components/page/assistant-analyse/ComprehensiveAnomaly.vue'),
                         meta: { title: '综合异常检测' }
+                    },
+                    {
+                        path: 'TcnBitcnAtWarning',
+                        component: () => import('../components/page/assistant-analyse/TcnBitcnAtWarning.vue'),
+                        meta: { title: '钻时异常检测' }
                     }
                 
 

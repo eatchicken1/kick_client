@@ -2,7 +2,7 @@
     <el-card >
         <div align="center">
             <div style="width: 100%; height: 20%">
-                <h1 style="margin-top: 20px"><i class="el-icon-s-custom"></i>欢迎使用《事故复杂预警子系统》</h1>
+                <h1 style="margin-top: 20px"><i class="el-icon-s-custom"></i>欢迎使用《早期溢流智能预警系统》</h1>
                 <div style="font-size: 30px"> </div>
                  <!-- <div style="font-size: 30px"> 新疆油田数据中心</div> -->
             </div>

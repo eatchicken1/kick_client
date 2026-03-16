@@ -118,15 +118,15 @@ export default {
                  {
                     icon: 'el-icon-time',
                     index: '6',
-                    title: '钻井复杂风险实时预警模块',
+                    title: '早期溢流智能预警模块',
                     subs: [
                         {
                             index: 'overflow',
-                            title: '事故复杂实时预警1'
+                            title: '溢流实时预警1'
                         },
                        {
                             index: 'overflow2',
-                            title: '事故复杂实时预警2'
+                            title: '溢流实时预警2'
                         },
                         {
                             index: '6',
@@ -139,6 +139,10 @@ export default {
                         {
                             index: 'ComprehensiveAnomaly',
                             title: '综合异常检测'
+                        },
+                        {
+                            index: 'TcnBitcnAtWarning',
+                            title: '钻时异常检测'
                         }
                     ]
                 },
