@@ -1,7 +1,7 @@
 <template>
   <div class="anomaly-container" ref="container">
     <el-alert v-if="!currentWellId" type="warning" :closable="false" show-icon class="well-alert">
-      请先在井眼选择中选择井号，再进行综合溢流异常检测。
+      请先在井眼选择中选择井号，再进行综合溢流实时异常检测。
     </el-alert>
 
     <el-card class="box-card search-card" shadow="hover">
@@ -9,446 +9,1004 @@
         <el-form-item label="当前井号">
           <el-tag type="info" size="medium" effect="dark">{{ currentWellId || '未选择' }}</el-tag>
         </el-form-item>
-        <el-form-item label="时间范围">
+        
+        <el-form-item label="起始时间">
           <el-date-picker
-            v-model="searchForm.timeRange"
-            type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            format="yyyy-MM-dd HH:mm:ss"
-            value-format="yyyy-MM-dd HH:mm:ss"
-            :default-time="['00:00:00', '23:59:59']"
-            style="width: 360px;">
+            v-model="searchForm.startTime"
+            type="datetime"
+            placeholder="选择开始时间"
+            format="yyyy/MM/dd HH:mm:ss"
+            value-format="yyyy/MM/dd HH:mm:ss"
+            style="width: 220px;">
           </el-date-picker>
         </el-form-item>
 
-        <el-collapse class="ptd-collapse" accordion>
-          <el-collapse-item title="⚙️ 高级算法参数 (PTD & 动态MAD)" name="ptd">
-            <el-form-item label="短窗"><el-input v-model.number="searchForm.shortWindow" placeholder="默认 10" style="width: 100px;" type="number"/></el-form-item>
-            <el-form-item label="长窗"><el-input v-model.number="searchForm.longWindow" placeholder="默认 100" style="width: 100px;" type="number"/></el-form-item>
-            <el-form-item label="MAD 窗口"><el-input v-model.number="searchForm.madWindow" placeholder="默认 500" style="width: 100px;" type="number"/></el-form-item>
-            <el-form-item label="K 系数"><el-input v-model.number="searchForm.kFactor" placeholder="默认 2.0" style="width: 100px;" type="number" step="0.1"/></el-form-item>
-          </el-collapse-item>
-        </el-collapse>
-
-        <el-form-item style="margin-top: 10px;">
-          <el-button type="primary" icon="el-icon-odometer" @click="fetchData" :loading="loading" :disabled="!currentWellId">
-            启动大规模机理协同分析
+        <el-form-item>
+          <el-button 
+            type="success" 
+            icon="el-icon-video-play"
+            :loading="isSimulating || isStopping" 
+            @click="startSimulation">
+            启动流式预警
           </el-button>
+	          <el-button 
+	            type="danger" 
+	            icon="el-icon-video-pause"
+	            :disabled="!isSimulating || isStopping" 
+	            @click="stopSimulation()">
+	            停止监测
+	          </el-button>
         </el-form-item>
       </el-form>
+
+      <el-alert 
+        v-if="isSimulating && isColdStart" 
+        type="warning" 
+        show-icon 
+        title="模型初始化中 (冷启动)：正在积累背景数据以建立动态阈值..." 
+        :closable="false" 
+        style="margin-bottom: 15px;" />
+
+      <div v-if="isSimulating" class="warning-banner" :class="'warning-' + warningLevel">
+        <i :class="warningLevel === 0 ? 'el-icon-success' : 'el-icon-warning'"></i>
+        <span v-if="warningLevel === 0">井筒状态正常</span>
+        <span v-else-if="warningLevel === 1">⚠️ {{ latestWarningMsg }}</span>
+        <span v-else-if="warningLevel === 2">🔴 {{ latestWarningMsg }}</span>
+      </div>
+
+      <div class="charts-container" v-if="hasData">
+        <div class="chart-item-large" ref="chartSpp"></div>
+        <div class="chart-item-large" ref="chartFlow"></div>
+        <div class="chart-item-large" ref="chartVolume"></div>
+        <div class="chart-item-large" ref="chartHookLoad"></div>
+        <div class="chart-item-large" ref="chartTorque"></div>
+        <div class="chart-item-large" ref="chartRop"></div>
+      </div>
+
+	      <div v-if="!isSimulating && hasData" class="chart-hint">
+        <i class="el-icon-info"></i> 监测已停止，图表数据已保留。可使用底部滑块查看历史数据。
+      </div>
     </el-card>
 
-    <el-row :gutter="15" class="dashboard-panel" v-if="hasData">
-      <el-col :span="10">
-        <div class="status-card" :class="globalStatus === 'danger' ? 'danger-bg' : 'safe-bg'">
-          <div class="status-icon">
-            <i :class="globalStatus === 'danger' ? 'el-icon-warning' : 'el-icon-success'"></i>
-          </div>
-          <div class="status-info" style="flex:1">
-            <div class="status-title">系统综合诊断结论</div>
-            <div class="status-text">{{ globalStatus === 'danger' ? '检测到高危溢流特征！' : '井筒压力平衡状态平稳' }}</div>
-            <div class="diagnosis-tags" v-if="globalStatus === 'danger'">
-              <el-tooltip class="item" effect="dark" content="点击查看底层触发机理风险树" placement="top" v-for="type in detectedWarningTypes" :key="type">
-                <el-tag effect="dark" type="danger" class="clickable-tag" @click="openRuleTreeDialog(type)">
-                  <i class="el-icon-s-operation"></i> {{ type }}
-                </el-tag>
-              </el-tooltip>
-            </div>
-          </div>
+    <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="700px" :class="'dialog-' + warningLevel">
+      <div class="logic-tree-container" v-if="latestWarningMsg">
+        <div class="logic-result" :class="'level-' + warningLevel">
+          <i :class="warningLevel === 2 ? 'el-icon-warning' : 'el-icon-info'"></i> 
+          诊断结论: <strong>{{ latestWarningMsg }}</strong>
         </div>
-      </el-col>
-      <el-col :span="14">
-        <el-card shadow="never" class="stats-card">
-          <div slot="header" class="clearfix">
-            <span>📊 核心检测参数突破统计摘要</span>
-          </div>
-          <div class="stats-grid">
-            <div class="stat-item"><span class="label">立压 (SPP):</span><span class="value" :class="{'text-danger': stats.sppAnomalies > 0}">{{ stats.sppAnomalies }} 点</span></div>
-            <div class="stat-item"><span class="label">出口流量:</span><span class="value" :class="{'text-danger': stats.flowAnomalies > 0}">{{ stats.flowAnomalies }} 点</span></div>
-            <div class="stat-item"><span class="label">总池体积:</span><span class="value" :class="{'text-danger': stats.volAnomalies > 0}">{{ stats.volAnomalies }} 点</span></div>
-            <div class="stat-item"><span class="label">钻时 (ROP):</span><span class="value" :class="{'text-danger': stats.ropAnomalies > 0}">{{ stats.ropAnomalies }} 点</span></div>
-            <div class="stat-item clickable-stat" @click="openIntervalDialog" title="点击查看详情并进行图表定位">
-              <span class="label"><i class="el-icon-location-outline"></i> 溢流高危区间:</span>
-              <span class="value text-danger" style="font-weight: bold; text-decoration: underline;">
-                {{ stats.warningIntervals }} 个 <i class="el-icon-thumb" style="font-size:16px;"></i>
-              </span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <div class="chart-list" v-loading="loading" element-loading-text="正在进行LTTB高性能降采样及特征渲染..." element-loading-spinner="el-icon-loading" v-if="hasData">
-      <div class="chart-item-large" ref="chartSpp"></div>
-      <div class="chart-item-large" ref="chartFlow"></div>
-      <div class="chart-item-large" ref="chartVolume"></div>
-      <div class="chart-item-large" ref="chartHookLoad"></div>
-      <div class="chart-item-large" ref="chartTorque"></div>
-      <div class="chart-item-large" ref="chartRop"></div>
-    </div>
-
-    <el-dialog :title="`🔬 综合工况风险树溯源: [${activeRuleType}]`" :visible.sync="ruleDialogVisible" width="650px" custom-class="rule-dialog">
-      <div class="logic-tree-container" v-if="activeRuleData">
-        <div class="logic-result"><i class="el-icon-warning"></i> 诊断结论: <strong>{{ activeRuleType }}</strong></div>
         <div class="logic-line-vertical"></div>
         <div class="logic-gate">AND (需同时满足以下机理)</div>
         <div class="logic-line-vertical"></div>
         <div class="logic-branches">
-          <div class="logic-branch" v-for="(cond, idx) in activeRuleData.conditions" :key="idx">
+          <div class="logic-branch" v-for="(cond, idx) in activeConditions" :key="idx">
             <div class="param-box"><span class="param-icon">{{ cond.icon }}</span>{{ cond.name }}</div>
             <div class="logic-line-horizontal"></div>
             <div class="dir-box" :class="cond.dir">{{ cond.text }} <i :class="cond.dir === 'low' ? 'el-icon-bottom' : (cond.dir === 'high' ? 'el-icon-top' : 'el-icon-right')"></i></div>
           </div>
         </div>
-        <div class="logic-explanation"><strong>📝 井下物理机理解析：</strong>{{ activeRuleData.desc }}</div>
+        <div class="logic-explanation"><strong>📝 井下物理机理解析：</strong>{{ activeDescription }}</div>
+      </div>
+      <div v-else class="safe-result">
+        <i class="el-icon-success"></i> 井筒状态正常，暂无溢流风险
       </div>
     </el-dialog>
-
-    <el-dialog title="📋 溢流高危区间清单导航" :visible.sync="intervalDialogVisible" width="700px">
-      <el-alert title="点击右侧【图表定位】按钮，页面将自动滚动并精准聚焦该时间段。" type="info" show-icon style="margin-bottom:15px;"></el-alert>
-      <el-table :data="intervalList" border stripe size="small" height="350">
-        <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
-        <el-table-column prop="type" label="工况类型" width="140" align="center">
-          <template slot-scope="scope">
-            <el-tag type="danger" effect="dark" size="small">{{ scope.row.type }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="start" label="起始时间" align="center"></el-table-column>
-        <el-table-column prop="end" label="结束时间" align="center"></el-table-column>
-        <el-table-column label="操作" width="100" align="center">
-          <template slot-scope="scope">
-            <el-button type="primary" size="mini" icon="el-icon-aim" @click="jumpToChartTimeframe(scope.row)">图表定位</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
-
   </div>
 </template>
 
 <script>
-import { getPtdEarlyWarningApi } from '@/api/index';
 import * as echarts from 'echarts';
+import * as signalR from '@microsoft/signalr';
+import { Message, Notification } from 'element-ui';
 
-// 风险树知识库字典...
+const MAX_POINTS = 300;
+const METRIC_KEYS = ['spp', 'flow', 'volume', 'hookload', 'torque', 'rop'];
+
 const RULE_KNOWLEDGE_BASE = {
-  "溢流前兆(放空)": { desc: "钻遇地层裂缝或溶洞时，钻头突然失去反作用力，导致钻时、扭矩、立压骤降，钩载上升。", conditions: [ { name: "立压", icon: "⏱️", dir: "low", text: "突破下限" }, { name: "扭矩", icon: "⚙️", dir: "low", text: "突破下限" }, { name: "钻时", icon: "⛏️", dir: "low", text: "突破下限" }, { name: "钩载", icon: "🏗️", dir: "high", text: "突破上限" } ] },
-  "气侵溢流": { desc: "地层流体侵入井筒导致液柱密度降低，因流体膨胀导致出口流量与泥浆池体积增加。", conditions: [ { name: "立压", icon: "⏱️", dir: "low", text: "突破下限" }, { name: "出口流量", icon: "🌊", dir: "high", text: "突破上限" }, { name: "总池体积", icon: "🛢️", dir: "high", text: "突破上限" } ] },
-  "后期溢流": { desc: "井筒内流体压力已建立新平衡，立压不再下降但出口流量和池体积仍在增加。", conditions: [ { name: "立压", icon: "⏱️", dir: "none", text: "保持稳定" }, { name: "出口流量", icon: "🌊", dir: "high", text: "突破上限" }, { name: "总池体积", icon: "🛢️", dir: "high", text: "突破上限" } ] }
+  一级预警: {
+    desc: '钻遇地层裂缝或溶洞时，钻头突然失去反作用力，导致钻时、扭矩、立压骤降，钩载上升。',
+    conditions: [
+      { name: '立压', icon: '⏱️', dir: 'low', text: '突破下限' },
+      { name: '扭矩', icon: '⚙️', dir: 'low', text: '突破下限' },
+      { name: '钻时', icon: '⛏️', dir: 'low', text: '突破下限' },
+      { name: '钩载', icon: '🏗️', dir: 'high', text: '突破上限' }
+    ]
+  },
+  二级预警: {
+    desc: '地层流体侵入井筒导致液柱密度降低，因流体膨胀导致出口流量与泥浆池体积增加。',
+    conditions: [
+      { name: '立压', icon: '⏱️', dir: 'low', text: '突破下限' },
+      { name: '出口流量', icon: '🌊', dir: 'high', text: '突破上限' },
+      { name: '总池体积', icon: '🛢️', dir: 'high', text: '突破上限' }
+    ]
+  },
+  关注: {
+    desc: '井筒内流体压力已建立新平衡，立压不再下降但出口流量和池体积仍在增加。',
+    conditions: [
+      { name: '立压', icon: '⏱️', dir: 'none', text: '保持稳定' },
+      { name: '出口流量', icon: '🌊', dir: 'high', text: '突破上限' },
+      { name: '总池体积', icon: '🛢️', dir: 'high', text: '突破上限' }
+    ]
+  }
 };
+
+function createMetricSeries() {
+  return {
+    orig: [],
+    ptd: [],
+    upper: [],
+    lower: [],
+    anomalies: []
+  };
+}
 
 export default {
   name: 'ComprehensiveAnomaly',
   data() {
     return {
-      loading: false, hasData: false,
-      searchForm: { timeRange: ['2024-10-01 00:00:00', '2024-10-01 03:00:00'], shortWindow: null, longWindow: null, madWindow: null, kFactor: null },
-      globalStatus: 'safe',
-      detectedWarningTypes: [], 
-      stats: { sppAnomalies: 0, flowAnomalies: 0, volAnomalies: 0, ropAnomalies: 0, warningIntervals: 0 },
-      chartInstances: [],
+      searchForm: {
+        startTime: '',
+        shortWindow: 10,
+        longWindow: 100,
+        madWindow: 500,
+        kFactor: 3.0
+      },
+      isSimulating: false,
+      isColdStart: false,
+      hasData: false,
+      latestWarningMsg: '',
+      latestWarningType: '',
+      dialogVisible: false,
+      hubConnection: null,
+      chartInstances: {},
       chartData: {
-        times: [], spp: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] }, flow: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
-        volume: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] }, hookLoad: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
-        torque: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] }, rop: { orig: [], ptd: [], upper: [], lower: [], anomalies: [] },
+        times: [],
+        spp: createMetricSeries(),
+        flow: createMetricSeries(),
+        volume: createMetricSeries(),
+        hookload: createMetricSeries(),
+        torque: createMetricSeries(),
+        rop: createMetricSeries(),
         kickWarningAreas: []
       },
+      lastWarningTime: 0,
+      isStopping: false,
       resizeObserver: null,
-      
-      // 弹窗状态
-      ruleDialogVisible: false, activeRuleType: '', activeRuleData: null,
-      intervalDialogVisible: false, intervalList: [] // 导航清单
+      activeRunId: 0
     };
   },
-  computed: { currentWellId() { return this.$store.state.jh || ''; } },
-  mounted() {
-    if (this.$store.state.StartTime) {
-      try {
-        const startStr = this.$store.state.StartTime.replace(/\//g, '-');
-        const startDate = new Date(startStr);
-        const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
-        const fmt = (d) => {
-          const pad = n => String(n).padStart(2, '0');
-          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-        };
-        this.searchForm.timeRange = [fmt(startDate), fmt(endDate)];
-      } catch (e) {}
+  computed: {
+    currentWellId() {
+      return this.$store.state.jh || '';
+    },
+    warningLevel() {
+      if (!this.latestWarningMsg) return 0;
+      if (this.latestWarningMsg.includes('一级')) return 2;
+      if (this.latestWarningMsg.includes('二级')) return 1;
+      return 1;
+    },
+    dialogTitle() {
+      if (this.warningLevel === 0) return '✅ 综合工况风险树溯源';
+      if (this.warningLevel === 2) return '🔴 综合工况风险树溯源 - 一级预警';
+      return '⚠️ 综合工况风险树溯源 - 二级预警';
+    },
+    activeConditions() {
+      if (!this.latestWarningMsg) return [];
+      if (this.latestWarningMsg.includes('一级')) return RULE_KNOWLEDGE_BASE.一级预警.conditions;
+      if (this.latestWarningMsg.includes('二级')) return RULE_KNOWLEDGE_BASE.二级预警.conditions;
+      return RULE_KNOWLEDGE_BASE.关注.conditions;
+    },
+    activeDescription() {
+      if (!this.latestWarningMsg) return '';
+      if (this.latestWarningMsg.includes('一级')) return RULE_KNOWLEDGE_BASE.一级预警.desc;
+      if (this.latestWarningMsg.includes('二级')) return RULE_KNOWLEDGE_BASE.二级预警.desc;
+      return RULE_KNOWLEDGE_BASE.关注.desc;
+    },
+  },
+  watch: {
+    currentWellId(newVal, oldVal) {
+      if (newVal === oldVal) return;
+      this.handleWellChange(newVal, oldVal);
     }
-    this.resizeObserver = new ResizeObserver(() => { requestAnimationFrame(() => { this.chartInstances.forEach(chart => chart.resize()); }); });
-    if (this.$refs.container) this.resizeObserver.observe(this.$refs.container);
   },
-  beforeDestroy() {
-    if (this.resizeObserver) this.resizeObserver.disconnect();
-    this.chartInstances.forEach(chart => chart.dispose());
-  },
-  methods: {
-    openRuleTreeDialog(type) { this.activeRuleType = type; this.activeRuleData = RULE_KNOWLEDGE_BASE[type] || null; this.ruleDialogVisible = true; },
-    openIntervalDialog() { if(this.intervalList.length > 0) this.intervalDialogVisible = true; },
-    isValidNumber(v) { return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v)); },
-    
-    // 🌟核心方法：将图表自动缩放定位到目标区间，并带上下文缓冲
-    jumpToChartTimeframe(row) {
-      this.intervalDialogVisible = false;
-      const startIndex = this.chartData.times.indexOf(row.start);
-      const endIndex = this.chartData.times.indexOf(row.end);
-      if (startIndex === -1 || endIndex === -1) return;
+  mounted() {
+    this.initTimeRange();
 
-      // 为避免定位太死板，前后各增加约 3 分钟的 padding (假设 1 秒 1 点，3分钟约 180 点，此处用时间戳精准计算)
-      const startTS = new Date(row.start.replace(/-/g, '/')).getTime();
-      const endTS = new Date(row.end.replace(/-/g, '/')).getTime();
-      const paddingTS = 3 * 60 * 1000; // 3分钟缓冲期
-
-      let targetStartStr = row.start;
-      let targetEndStr = row.end;
-
-      // 寻找缓冲起始点
-      for (let i = startIndex; i >= 0; i--) {
-        if (new Date(this.chartData.times[i].replace(/-/g, '/')).getTime() <= startTS - paddingTS) { targetStartStr = this.chartData.times[i]; break; }
-        if (i === 0) targetStartStr = this.chartData.times[0];
-      }
-      // 寻找缓冲结束点
-      for (let i = endIndex; i < this.chartData.times.length; i++) {
-        if (new Date(this.chartData.times[i].replace(/-/g, '/')).getTime() >= endTS + paddingTS) { targetEndStr = this.chartData.times[i]; break; }
-        if (i === this.chartData.times.length - 1) targetEndStr = this.chartData.times[i];
-      }
-
-      // 通过 dispatchAction 让所有联动的 ECharts 瞬间缩放至目标位置
-      this.chartInstances.forEach(chart => {
-        chart.dispatchAction({
-          type: 'dataZoom',
-          startValue: targetStartStr,
-          endValue: targetEndStr
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          Object.values(this.chartInstances).forEach((chart) => {
+            if (chart) chart.resize();
+          });
         });
       });
 
-      // 页面自动滚动到顶部第一个图表位置，确保用户马上能看到
-      if (this.$refs.container) this.$refs.container.scrollIntoView({ behavior: 'smooth' });
-      this.$message.success(`已精准定位至 ${row.start} 发生的 [${row.type}]，并自动展开上下文`);
+      if (this.$refs.container) {
+        this.resizeObserver.observe(this.$refs.container);
+      }
+    }
+  },
+  beforeDestroy() {
+    this.stopSimulation(undefined, { silent: true });
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    this.disposeCharts();
+  },
+  methods: {
+    initTimeRange() {
+      if (!this.searchForm.startTime) {
+        this.searchForm.startTime = this.formatDate(new Date());
+      }
     },
 
-    async fetchData() {
-      if (!this.currentWellId) return this.$message.warning('请先选择井号');
-      if (!this.searchForm.timeRange || this.searchForm.timeRange.length < 2) return this.$message.warning('请选择时间范围');
+    formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const h = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const s = String(date.getSeconds()).padStart(2, '0');
+      return `${y}/${m}/${d} ${h}:${min}:${s}`;
+    },
 
-      const params = { wellId: this.currentWellId, startTime: this.searchForm.timeRange[0].replace(' ', 'T'), endTime: this.searchForm.timeRange[1].replace(' ', 'T') };
-      if (this.isValidNumber(this.searchForm.shortWindow)) params.shortWindow = this.searchForm.shortWindow;
-      if (this.isValidNumber(this.searchForm.longWindow)) params.longWindow = this.searchForm.longWindow;
-      if (this.isValidNumber(this.searchForm.madWindow)) params.madWindow = this.searchForm.madWindow;
-      if (this.isValidNumber(this.searchForm.kFactor)) params.kFactor = this.searchForm.kFactor;
+    parseDateTime(value) {
+      if (!value) return null;
 
-      this.loading = true; this.hasData = false;
-      this.$nextTick(async () => {
-        try {
-          const res = await getPtdEarlyWarningApi(params);
-          if (res && res.success && res.data && res.data.length > 0) {
-            this.hasData = true;
-            this.processChartData(res.data);
-            this.$nextTick(() => { this.renderAllCharts(); this.$message.success('多维算法分析完成'); });
-          } else { this.$message.info('未查询到数据'); this.clearCharts(); }
-        } catch (error) { this.$message.error('数据处理异常'); this.clearCharts(); } 
-        finally { this.loading = false; }
+      if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+      }
+
+      const text = String(value).trim();
+
+      let date = new Date(text);
+      if (!Number.isNaN(date.getTime())) return date;
+
+      let normalized = text.replace('T', ' ');
+      normalized = normalized.replace(/\.\d+(?=[+-]\d{2}:\d{2}$)/, '');
+      date = new Date(normalized);
+      if (!Number.isNaN(date.getTime())) return date;
+
+      const match = text.match(
+        /(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2}):(\d{1,2})/
+      );
+
+      if (match) {
+        const y = Number(match[1]);
+        const m = Number(match[2]) - 1;
+        const d = Number(match[3]);
+        const h = Number(match[4]);
+        const min = Number(match[5]);
+        const s = Number(match[6]);
+        date = new Date(y, m, d, h, min, s);
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+
+      return null;
+    },
+
+
+    buildSimulationConfig() {
+      return JSON.stringify({
+        shortWindow: this.searchForm.shortWindow,
+        longWindow: this.searchForm.longWindow,
+        madWindow: this.searchForm.madWindow,
+        kFactor: this.searchForm.kFactor
       });
     },
 
-    processChartData(data) {
-      const resetParam = () => ({ orig: [], ptd: [], upper: [], lower: [], anomalies: [] });
-      this.chartData = { times: [], spp: resetParam(), flow: resetParam(), volume: resetParam(), hookLoad: resetParam(), torque: resetParam(), rop: resetParam(), kickWarningAreas: [] };
-      this.intervalList = []; // 初始化导航清单
-
-      let currentWarningType = null, warningStart = null;
-      let globalDangerCount = 0, sppErr = 0, flowErr = 0, volErr = 0, ropErr = 0;
-      let typeSet = new Set();
-
-      const extract = (paramKey, itemData, index, isSpp, isFlow, isVol, isRop) => {
-        this.chartData[paramKey].orig.push(itemData.originalValue);
-        this.chartData[paramKey].ptd.push(itemData.ptdValue);
-        this.chartData[paramKey].upper.push(itemData.upperThreshold);
-        this.chartData[paramKey].lower.push(itemData.lowerThreshold);
-        if (itemData.isAnomaly) {
-          this.chartData[paramKey].anomalies.push([index, itemData.ptdValue]);
-          if (isSpp) sppErr++; if (isFlow) flowErr++; if (isVol) volErr++; if (isRop) ropErr++;
-        }
-      };
-
-      // 提取区间辅助方法
-      const pushArea = (start, end, type) => {
-        this.chartData.kickWarningAreas.push([{ xAxis: start, name: type }, { xAxis: end }]);
-        this.intervalList.push({ start: start, end: end, type: type });
-        globalDangerCount++;
-      };
-
-      data.forEach((item, index) => {
-        const time = item.logTime.replace('T', ' '); this.chartData.times.push(time);
-        extract('spp', item.spp, index, true, false, false, false);
-        extract('flow', item.outletFlow, index, false, true, false, false);
-        extract('volume', item.poolVolume, index, false, false, true, false);
-        extract('hookLoad', item.hookLoad, index, false, false, false, false);
-        extract('torque', item.torque, index, false, false, false, false);
-        extract('rop', item.rop, index, false, false, false, true);
-
-        if (item.isKickWarning) {
-          typeSet.add(item.warningType); 
-          if (currentWarningType !== item.warningType) {
-            if (currentWarningType !== null) pushArea(warningStart, time, currentWarningType);
-            currentWarningType = item.warningType; warningStart = time;
-          }
-        } else {
-          if (currentWarningType !== null) {
-            pushArea(warningStart, data[index - 1].logTime.replace('T', ' '), currentWarningType);
-            currentWarningType = null;
-          }
-        }
+    resetChartData() {
+      this.chartData.times = [];
+      METRIC_KEYS.forEach((key) => {
+        this.chartData[key].orig = [];
+        this.chartData[key].ptd = [];
+        this.chartData[key].upper = [];
+        this.chartData[key].lower = [];
+        this.chartData[key].anomalies = [];
       });
-      if (currentWarningType !== null) pushArea(warningStart, data[data.length - 1].logTime.replace('T', ' '), currentWarningType);
-
-      this.globalStatus = globalDangerCount > 0 ? 'danger' : 'safe';
-      this.detectedWarningTypes = Array.from(typeSet);
-      this.stats = { sppAnomalies: sppErr, flowAnomalies: flowErr, volAnomalies: volErr, ropAnomalies: ropErr, warningIntervals: globalDangerCount };
+      this.chartData.kickWarningAreas = [];
+      this.latestWarningMsg = '';
+      this.latestWarningType = '';
+      this.lastWarningTime = 0;
+      this.dialogVisible = false;
     },
 
-    renderAllCharts() {
-      this.chartInstances.forEach(chart => chart.dispose());
-      this.chartInstances = [];
+    disposeCharts() {
+      Object.values(this.chartInstances).forEach((chart) => {
+        if (chart) {
+          chart.dispose();
+        }
+      });
+      this.chartInstances = {};
+    },
 
-      const { times, kickWarningAreas } = this.chartData;
-      
-      // 🌟核心：默认寻找最后30分钟区间作为初始缩放范围
-      let initialZoomStart = times[0];
-      let initialZoomEnd = times[times.length - 1];
-      if (times.length > 0) {
-        const endTS = new Date(initialZoomEnd.replace(/-/g, '/')).getTime();
-        const targetStartTS = endTS - 30 * 60 * 1000; // 30分钟前
-        for (let i = times.length - 1; i >= 0; i--) {
-          if (new Date(times[i].replace(/-/g, '/')).getTime() <= targetStartTS) { initialZoomStart = times[i]; break; }
+    ensureChartsReady() {
+      this.$nextTick(() => {
+        if (!this.hasData) return;
+        if (Object.keys(this.chartInstances).length > 0) return;
+        this.initAllCharts();
+      });
+    },
+
+    initChart(refName, title, color, isInverse = false) {
+      const ref = this.$refs[refName];
+      if (!ref) return null;
+
+      const chart = echarts.init(ref);
+
+      let initialZoomStart = this.chartData.times[0];
+      const initialZoomEnd = this.chartData.times[this.chartData.times.length - 1];
+
+      if (this.chartData.times.length > 0) {
+        const endTs = new Date(initialZoomEnd.replace(/-/g, '/')).getTime();
+        const targetStartTs = endTs - 30 * 60 * 1000;
+
+        for (let i = this.chartData.times.length - 1; i >= 0; i -= 1) {
+          const ts = new Date(this.chartData.times[i].replace(/-/g, '/')).getTime();
+          if (ts <= targetStartTs) {
+            initialZoomStart = this.chartData.times[i];
+            break;
+          }
         }
       }
-      
-      const kickMarkArea = { 
-        itemStyle: { color: 'rgba(255, 77, 79, 0.12)' }, 
-        label: { 
-          show: true, position: 'insideTop', color: '#c0392b', fontWeight: 'bold', 
-          backgroundColor: 'rgba(255,255,255,0.85)', padding: [4, 6], borderRadius: 4,
-          // 彻底解决拥挤：标签只在顶部居中展示，并利用外边距防重叠
+
+      const paramKey = refName.replace('chart', '').toLowerCase();
+      const dataSet = this.chartData[paramKey] || createMetricSeries();
+      const kickMarkArea = {
+        itemStyle: { color: 'rgba(255, 77, 79, 0.12)' },
+        label: {
+          show: true,
+          position: 'insideTop',
+          color: '#c0392b',
+          fontWeight: 'bold',
+          backgroundColor: 'rgba(255,255,255,0.85)',
+          padding: [4, 6],
+          borderRadius: 4,
           offset: [0, 10]
-        }, 
-        data: kickWarningAreas 
+        },
+        data: this.chartData.kickWarningAreas
       };
 
-      this.initChart(this.$refs.chartSpp, '立压 SPP (MPa)', '#1890ff', times, this.chartData.spp, kickMarkArea, initialZoomStart, initialZoomEnd, false);
-      this.initChart(this.$refs.chartFlow, '出口流量 Flow (%)', '#13c2c2', times, this.chartData.flow, kickMarkArea, initialZoomStart, initialZoomEnd, false);
-      this.initChart(this.$refs.chartVolume, '总池体积 Volume (m³)', '#52c41a', times, this.chartData.volume, kickMarkArea, initialZoomStart, initialZoomEnd, false);
-      this.initChart(this.$refs.chartHookLoad, '钩载 HKLA (kN)', '#faad14', times, this.chartData.hookLoad, kickMarkArea, initialZoomStart, initialZoomEnd, false);
-      this.initChart(this.$refs.chartTorque, '扭矩 Torque (kN.m)', '#f5222d', times, this.chartData.torque, kickMarkArea, initialZoomStart, initialZoomEnd, false);
-      this.initChart(this.$refs.chartRop, '钻时 ROP (min/m)', '#722ed1', times, this.chartData.rop, kickMarkArea, initialZoomStart, initialZoomEnd, true);
-
-      echarts.connect(this.chartInstances);
-    },
-
-    initChart(domRef, title, origColor, xData, dataset, markArea, initialZoomStart, initialZoomEnd, isInverse = false) {
-      if (!domRef) return;
-      const chart = echarts.init(domRef);
-      const option = {
-        title: { text: title, left: 15, top: 15, textStyle: { fontSize: 14, color: '#333' } },
+      chart.setOption({
+        title: {
+          text: title,
+          left: 15,
+          top: 15,
+          textStyle: { fontSize: 14, color: '#333' }
+        },
         tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
         legend: { data: ['原始值', 'PTD偏离', 'MAD上限', 'MAD下限'], top: 15, right: 20 },
-        grid: { left: '60px', right: '60px', bottom: '45px', top: '75px' }, 
-        // 🌟核心：赋予初始缩放区间，告别加载即拥挤
+        grid: { left: '60px', right: '60px', bottom: '45px', top: '75px' },
         dataZoom: [
-          { type: 'inside', xAxisIndex: 0, filterMode: 'filter', startValue: initialZoomStart, endValue: initialZoomEnd },
-          { type: 'slider', xAxisIndex: 0, height: 15, bottom: 5, startValue: initialZoomStart, endValue: initialZoomEnd }
+          {
+            type: 'inside',
+            xAxisIndex: 0,
+            filterMode: 'filter',
+            startValue: initialZoomStart,
+            endValue: initialZoomEnd
+          },
+          {
+            type: 'slider',
+            xAxisIndex: 0,
+            height: 15,
+            bottom: 5,
+            startValue: initialZoomStart,
+            endValue: initialZoomEnd
+          }
         ],
-        xAxis: { type: 'category', data: xData, boundaryGap: false, axisLabel: { formatter: (val) => val.split(' ')[1] } },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: this.chartData.times,
+          axisLabel: {
+            formatter: (val) => val.split(' ')[1] || val
+          }
+        },
         yAxis: [
-          { type: 'value', name: '原始值', scale: true, inverse: isInverse, axisLabel: { color: origColor }, splitLine: { show: false } },
-          { type: 'value', name: 'PTD基线', scale: true, position: 'right', axisLabel: { color: '#eab308' }, splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } } }
+          {
+            type: 'value',
+            name: '原始值',
+            scale: true,
+            inverse: isInverse,
+            axisLabel: { color },
+            splitLine: { show: false }
+          },
+          {
+            type: 'value',
+            name: 'PTD基线',
+            scale: true,
+            position: 'right',
+            axisLabel: { color: '#eab308' },
+            splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }
+          }
         ],
         series: [
-          { name: '原始值', type: 'line', yAxisIndex: 0, data: dataset.orig, sampling: 'lttb', showSymbol: false, itemStyle: { color: origColor }, lineStyle: { width: 2 }, markArea: markArea },
-          { name: 'PTD偏离', type: 'line', yAxisIndex: 1, data: dataset.ptd, sampling: 'lttb', showSymbol: false, itemStyle: { color: '#eab308' }, lineStyle: { width: 1.5 } },
-          { name: 'MAD上限', type: 'line', yAxisIndex: 1, data: dataset.upper, sampling: 'lttb', showSymbol: false, itemStyle: { color: '#ef4444' }, lineStyle: { width: 1, type: 'dashed' } },
-          { name: 'MAD下限', type: 'line', yAxisIndex: 1, data: dataset.lower, sampling: 'lttb', showSymbol: false, itemStyle: { color: '#22c55e' }, lineStyle: { width: 1, type: 'dashed' } },
-          { name: '突破阈值', type: 'scatter', yAxisIndex: 1, data: dataset.anomalies, large: true, itemStyle: { color: '#ef4444' }, symbolSize: 5, zlevel: 10 }
-        ]
-      };
-      chart.setOption(option);
-      this.chartInstances.push(chart);
+          {
+            name: '原始值',
+            type: 'line',
+            yAxisIndex: 0,
+            data: dataSet.orig,
+            sampling: 'lttb',
+            showSymbol: false,
+            itemStyle: { color },
+            lineStyle: { width: 2 },
+            markArea: kickMarkArea
+          },
+          {
+            name: 'PTD偏离',
+            type: 'line',
+            yAxisIndex: 1,
+            data: dataSet.ptd,
+            sampling: 'lttb',
+            showSymbol: false,
+            itemStyle: { color: '#eab308' },
+            lineStyle: { width: 1.5 }
+          },
+          {
+            name: 'MAD上限',
+            type: 'line',
+            yAxisIndex: 1,
+            data: dataSet.upper,
+            sampling: 'lttb',
+            showSymbol: false,
+            itemStyle: { color: '#ef4444' },
+            lineStyle: { width: 1, type: 'dashed' }
+          },
+          {
+            name: 'MAD下限',
+            type: 'line',
+            yAxisIndex: 1,
+            data: dataSet.lower,
+            sampling: 'lttb',
+            showSymbol: false,
+            itemStyle: { color: '#22c55e' },
+            lineStyle: { width: 1, type: 'dashed' }
+          },
+          {
+            name: '突破阈值',
+            type: 'scatter',
+            yAxisIndex: 1,
+            data: dataSet.anomalies,
+            large: true,
+            itemStyle: { color: '#ef4444' },
+            symbolSize: 5,
+            zlevel: 10
+          }
+        ],
+        animation: false
+      });
+
+      return chart;
     },
 
-    clearCharts() { this.chartInstances.forEach(chart => chart.clear()); this.hasData = false; this.globalStatus = 'safe'; this.detectedWarningTypes = []; }
+    initAllCharts() {
+      this.chartInstances.spp = this.initChart('chartSpp', '立压 SPP (MPa)', '#1890ff');
+      this.chartInstances.flow = this.initChart('chartFlow', '出口流量 Flow (%)', '#13c2c2');
+      this.chartInstances.volume = this.initChart('chartVolume', '总池体积 Volume (m³)', '#52c41a');
+      this.chartInstances.hookload = this.initChart('chartHookLoad', '钩载 HKLA (kN)', '#faad14');
+      this.chartInstances.torque = this.initChart('chartTorque', '扭矩 Torque (kN.m)', '#f5222d');
+      this.chartInstances.rop = this.initChart('chartRop', '钻时 ROP (min/m)', '#722ed1', true);
+
+      const charts = Object.values(this.chartInstances).filter(Boolean);
+      if (charts.length > 0) {
+        echarts.connect(charts);
+      }
+    },
+
+    appendMetricPoint(metricKey, metricDto, timeIndex) {
+      const target = this.chartData[metricKey];
+      if (!target) return;
+
+      if (metricDto) {
+        target.orig.push(metricDto.originalValue);
+        target.ptd.push(metricDto.ptdValue);
+        target.upper.push(metricDto.upperThreshold);
+        target.lower.push(metricDto.lowerThreshold);
+
+        if (metricDto.isAnomaly) {
+          target.anomalies.push([timeIndex, metricDto.ptdValue]);
+        }
+        return;
+      }
+
+      target.orig.push(null);
+      target.ptd.push(null);
+      target.upper.push(null);
+      target.lower.push(null);
+    },
+
+    trimWarningAreas() {
+      if (this.chartData.times.length === 0 || this.chartData.kickWarningAreas.length === 0) return;
+
+      const firstTime = this.chartData.times[0];
+      const validTimes = new Set(this.chartData.times);
+
+      this.chartData.kickWarningAreas = this.chartData.kickWarningAreas
+        .map((area) => {
+          const start = { ...(area[0] || {}) };
+          const end = { ...(area[1] || {}) };
+
+          if (!validTimes.has(start.xAxis)) {
+            start.xAxis = firstTime;
+          }
+
+          if (!validTimes.has(end.xAxis)) {
+            end.xAxis = this.chartData.times[this.chartData.times.length - 1];
+          }
+
+          return [start, end];
+        })
+        .filter((area) => area[0] && area[1] && area[0].xAxis && area[1].xAxis);
+    },
+
+    trimChartWindow() {
+      if (this.chartData.times.length <= MAX_POINTS) return;
+
+      this.chartData.times.shift();
+
+      METRIC_KEYS.forEach((key) => {
+        this.chartData[key].orig.shift();
+        this.chartData[key].ptd.shift();
+        this.chartData[key].upper.shift();
+        this.chartData[key].lower.shift();
+        this.chartData[key].anomalies = this.chartData[key].anomalies
+          .map(([idx, val]) => [idx - 1, val])
+          .filter(([idx]) => idx >= 0);
+      });
+
+      this.trimWarningAreas();
+    },
+
+    appendAndRenderData(dto) {
+      if (!dto || !dto.logTime) return;
+
+      const parsedLogTime = this.parseDateTime(dto.logTime);
+      const timeStr = parsedLogTime
+        ? this.formatDate(parsedLogTime)
+        : typeof dto.logTime === 'string'
+          ? dto.logTime.replace('T', ' ')
+          : this.formatDate(new Date());
+
+
+      const timeIndex = this.chartData.times.length;
+      this.chartData.times.push(timeStr);
+
+      this.appendMetricPoint('spp', dto.spp, timeIndex);
+      this.appendMetricPoint('flow', dto.outletFlow, timeIndex);
+      this.appendMetricPoint('volume', dto.poolVolume, timeIndex);
+      this.appendMetricPoint('hookload', dto.hookLoad, timeIndex);
+      this.appendMetricPoint('torque', dto.torque, timeIndex);
+      this.appendMetricPoint('rop', dto.rop, timeIndex);
+
+      this.isColdStart = this.chartData.times.length < this.searchForm.shortWindow;
+
+      this.trimChartWindow();
+      this.updateCharts();
+
+      if (dto.isKickWarning) {
+        this.latestWarningMsg = dto.warningType || '预警';
+        this.latestWarningType = this.latestWarningMsg.includes('一级') ? 'danger' : 'warning';
+
+        const now = Date.now();
+        if (now - this.lastWarningTime > 5000) {
+          this.lastWarningTime = now;
+          this.triggerWarningNotification(timeStr, this.latestWarningMsg);
+        }
+
+        const lastArea = this.chartData.kickWarningAreas[this.chartData.kickWarningAreas.length - 1];
+        if (lastArea) {
+          lastArea[1] = { xAxis: timeStr };
+        } else {
+          this.chartData.kickWarningAreas.push([
+            { xAxis: timeStr, name: dto.warningType },
+            { xAxis: timeStr }
+          ]);
+        }
+      } else if (this.latestWarningMsg) {
+        this.latestWarningMsg = '';
+      }
+    },
+
+    updateCharts() {
+      const chartMap = {
+        spp: this.chartData.spp,
+        flow: this.chartData.flow,
+        volume: this.chartData.volume,
+        hookload: this.chartData.hookload,
+        torque: this.chartData.torque,
+        rop: this.chartData.rop
+      };
+
+      const kickMarkArea = {
+        itemStyle: { color: 'rgba(255, 77, 79, 0.12)' },
+        label: {
+          show: true,
+          position: 'insideTop',
+          color: '#c0392b',
+          fontWeight: 'bold',
+          backgroundColor: 'rgba(255,255,255,0.85)',
+          padding: [4, 6],
+          borderRadius: 4,
+          offset: [0, 10]
+        },
+        data: this.chartData.kickWarningAreas
+      };
+
+      Object.keys(chartMap).forEach((key) => {
+        const chart = this.chartInstances[key];
+        if (!chart) return;
+
+        chart.setOption({
+          xAxis: { data: this.chartData.times },
+          series: [
+            { data: chartMap[key].orig, markArea: kickMarkArea },
+            { data: chartMap[key].ptd },
+            { data: chartMap[key].upper },
+            { data: chartMap[key].lower },
+            { data: chartMap[key].anomalies }
+          ]
+        });
+      });
+    },
+
+    triggerWarningNotification(timeStr, warningMsg) {
+      const notifyType = this.warningLevel === 2 ? 'error' : 'warning';
+
+      Notification({
+        title: this.warningLevel === 2 ? '🔴 一级预警' : '⚠️ 二级预警',
+        message: `[${timeStr}] ${warningMsg}`,
+        type: notifyType,
+        duration: 6000,
+        position: 'top-right'
+      });
+
+      if (this.warningLevel === 2) {
+        this.$alert(`${warningMsg}`, '🔴 一级预警 - 溢流风险', {
+          confirmButtonText: '查看详情',
+          callback: (action) => {
+            if (action === 'confirm') {
+              this.dialogVisible = true;
+            }
+          }
+        });
+      }
+
+      const audio = new Audio();
+      audio.src = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU';
+      audio.volume = 0.3;
+      audio.play().catch(() => {});
+    },
+
+    async createAndStartSimulation(startTime, wellId) {
+      const baseUrl = 'http://localhost:17600';
+      const connection = new signalR.HubConnectionBuilder()
+        .withUrl(`${baseUrl}/api/hub/monitor`)
+        .withAutomaticReconnect()
+        .build();
+
+      const runId = this.activeRunId + 1;
+      this.activeRunId = runId;
+      this.hubConnection = connection;
+
+      const isActiveConnection = () =>
+        this.hubConnection === connection && this.activeRunId === runId;
+
+      connection.on('ReceiveRealtimeData', (dto) => {
+        if (!isActiveConnection()) return;
+        this.appendAndRenderData(dto);
+      });
+
+      connection.on('SimulationFinished', async (msg) => {
+        if (!isActiveConnection()) return;
+        Message.success(msg);
+        await this.stopSimulation(connection, { silent: true, invalidateRun: true });
+      });
+
+      connection.on('SimulationError', async (err) => {
+        if (!isActiveConnection()) return;
+        Message.error(`服务器错误: ${err}`);
+        await this.stopSimulation(connection, { silent: true, invalidateRun: true });
+      });
+
+      connection.onclose(async (err) => {
+        if (!isActiveConnection()) return;
+        if (!this.isStopping && err) {
+          Message.warning('监测连接已断开');
+        }
+        await this.stopSimulation(connection, { silent: true, invalidateRun: true });
+      });
+
+      try {
+        await connection.start();
+
+        if (!isActiveConnection()) {
+          await connection.stop().catch(() => {});
+          return false;
+        }
+
+        await connection.send(
+          'StartRealtimeSimulationAsync',
+          wellId,
+          startTime,
+          this.buildSimulationConfig()
+        );
+
+        if (!isActiveConnection()) {
+          await connection.stop().catch(() => {});
+          return false;
+        }
+
+        return true;
+      } catch (err) {
+        const errMsg = (err && err.message) || String(err);
+        const isExpectedStopError =
+          this.isStopping ||
+          !isActiveConnection() ||
+          errMsg.includes('Invocation canceled') ||
+          errMsg.includes('underlying connection being closed') ||
+          errMsg.includes('Connection disconnected');
+
+        if (!isExpectedStopError) {
+          Message.error(`连接失败: ${errMsg}`);
+        }
+
+        try {
+          await connection.stop();
+        } catch (e) {
+          // ignore
+        }
+
+        if (this.hubConnection === connection) {
+          this.hubConnection = null;
+        }
+
+        return false;
+      }
+    },
+
+    async startSimulation() {
+      if (!this.currentWellId || !this.searchForm.startTime) {
+        Message.warning('请确认井号和起始时间');
+        return;
+      }
+
+      const targetWellId = this.currentWellId;
+
+      await this.stopSimulation(undefined, { silent: true });
+      this.resetChartData();
+      this.disposeCharts();
+
+      this.isSimulating = true;
+      this.isColdStart = true;
+      this.hasData = true;
+      this.ensureChartsReady();
+
+      const started = await this.createAndStartSimulation(this.searchForm.startTime, targetWellId);
+
+      if (started) {
+        Message.success('流式计算模拟已启动，数据正在拉取...');
+        return;
+      }
+
+      this.isSimulating = false;
+      this.isColdStart = false;
+      this.hasData = this.chartData.times.length > 0;
+      if (!this.hasData) {
+        this.disposeCharts();
+      }
+    },
+
+
+	    async stopSimulation(connection = this.hubConnection, options = {}) {
+	      // Vue v-on 默认会把 DOM 事件对象作为第一个参数传入。
+	      // 这里统一兜底，避免把点击事件误当成 SignalR 连接来 stop。
+	      if (connection && typeof connection.stop !== 'function') {
+	        connection = this.hubConnection;
+	        options = {};
+	      }
+
+	      const { silent = false, invalidateRun = true } = options;
+	      const isCurrentConnection = !connection || this.hubConnection === connection;
+
+      if (invalidateRun) {
+        this.activeRunId += 1;
+      }
+
+      if (isCurrentConnection) {
+        this.isStopping = true;
+        this.hubConnection = null;
+        this.isSimulating = false;
+        this.isColdStart = false;
+      }
+
+      if (connection) {
+        try {
+          await connection.stop();
+        } catch (e) {
+          if (!silent) {
+            console.warn('停止连接失败:', e);
+          }
+        }
+      }
+
+      if (isCurrentConnection) {
+        this.isStopping = false;
+      }
+    },
+
+    async handleWellChange(newVal, oldVal) {
+      await this.stopSimulation(undefined, { silent: true });
+      this.resetChartData();
+      this.disposeCharts();
+      this.hasData = false;
+      this.dialogVisible = false;
+
+      if (newVal && !oldVal && !this.searchForm.startTime) {
+        this.initTimeRange();
+      }
+    }
   }
 };
 </script>
 
+
 <style scoped>
-.anomaly-container { padding: 15px; background-color: #f1f5f9; min-height: 100vh; width: 100%; box-sizing: border-box;}
-.search-card { margin-bottom: 15px; border-radius: 8px; border: none; }
-.ptd-collapse >>> .el-collapse-item__header { border: none; height: 36px; color: #3b82f6; font-weight: bold; background: transparent; }
-.dashboard-panel { margin-bottom: 15px; }
-
-/* 态势感知卡片 */
-.status-card { display: flex; align-items: center; padding: 20px; border-radius: 8px; height: 110px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-.safe-bg { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #bbf7d0; }
-.danger-bg { background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border: 1px solid #fecaca; animation: pulse-border 2s infinite; }
-@keyframes pulse-border { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
-
-.status-icon i { font-size: 48px; margin-right: 15px; }
-.safe-bg .status-icon i { color: #22c55e; }
-.danger-bg .status-icon i { color: #ef4444; }
-.status-title { font-size: 13px; color: #64748b; margin-bottom: 4px; }
-.status-text { font-size: 18px; font-weight: bold; color: #0f172a; margin-bottom: 8px;}
-.danger-bg .status-text { color: #b91c1c; }
-
-/* 动态诊断标签 */
-.diagnosis-tags { display: flex; gap: 8px; flex-wrap: wrap; }
-.clickable-tag { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; font-weight: bold;}
-.clickable-tag:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(239,68,68,0.3); }
-
-/* 统计卡片与导航按钮交互 */
-.stats-card { height: 152px; border-radius: 8px; border: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-.stats-card >>> .el-card__header { padding: 12px 15px; background: #ffffff; font-weight: bold; font-size: 14px; border-bottom: 1px solid #e2e8f0; }
-.stats-grid { display: flex; justify-content: space-between; align-items: center; height: 100%; padding: 0 15px;}
-.stat-item { text-align: center; display: flex; flex-direction: column; gap: 8px; position: relative;}
-.stat-item .label { font-size: 13px; color: #64748b; }
-.stat-item .value { font-size: 22px; font-weight: bold; color: #0f172a;}
-.text-danger { color: #ef4444 !important; }
-
-/* 🌟新增交互：高危区悬浮态 */
-.clickable-stat {
-  cursor: pointer;
-  padding: 10px;
+.anomaly-container {
+  padding: 15px;
+}
+.well-alert {
+  margin-bottom: 15px;
+}
+.warning-banner {
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.warning-banner.warning-0 {
+  background: #f0f9eb;
+  color: #67C23A;
+  border: 1px solid #e1f3d8;
+}
+.warning-banner.warning-1 {
+  background: #fdf6ec;
+  color: #E6A23C;
+  border: 1px solid #faecd8;
+  animation: pulse 2s infinite;
+}
+.warning-banner.warning-2 {
+  background: #fef0f0;
+  color: #F56C6C;
+  border: 1px solid #fde2e2;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.charts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 15px;
+}
+.chart-hint {
+  padding: 10px 15px;
+  background: #f4f4f5;
+  border-radius: 4px;
+  margin-top: 15px;
+  color: #909399;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chart-item-large {
+  width: 100%;
+  height: 350px;
+  background: #ffffff;
   border-radius: 8px;
-  background: #fff1f0;
-  border: 1px dashed #ffa39e;
-  transition: all 0.3s;
+  border: 1px solid #e2e8f0;
 }
-.clickable-stat:hover {
-  background: #ffccc7;
-  transform: scale(1.05);
-  box-shadow: 0 4px 10px rgba(245, 34, 45, 0.2);
+.logic-tree-container {
+  padding: 20px;
 }
-
-/* 图表区 */
-.chart-list { display: flex; flex-direction: column; gap: 20px; width: 100%; }
-.chart-item-large { width: 100%; height: 350px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; }
-
-/* ================= 核心：风险树 UI 样式 ================= */
-.rule-dialog >>> .el-dialog__header { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.rule-dialog >>> .el-dialog__title { font-weight: bold; color: #1e293b; }
-.logic-tree-container { display: flex; flex-direction: column; align-items: center; padding: 10px 0; background: #fafafa; border-radius: 8px; }
-.logic-result { background: #ef4444; color: white; padding: 10px 30px; border-radius: 6px; font-size: 18px; box-shadow: 0 4px 6px rgba(239,68,68,0.3); z-index: 2;}
-.logic-line-vertical { width: 4px; height: 30px; background: #cbd5e1; }
-.logic-gate { background: #3b82f6; color: white; padding: 6px 20px; border-radius: 20px; font-size: 14px; font-weight: bold; box-shadow: 0 4px 6px rgba(59,130,246,0.3); z-index: 2;}
-.logic-branches { display: flex; flex-direction: column; gap: 15px; width: 85%; background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 20px; position: relative;}
-.logic-branch { display: flex; justify-content: space-between; align-items: center; }
-.param-box { flex: 1; background: #f1f5f9; padding: 10px; border-radius: 4px; border-left: 4px solid #64748b; font-weight: bold; color: #334155;}
-.param-icon { margin-right: 8px; font-size: 16px; }
-.logic-line-horizontal { height: 2px; width: 40px; background: #cbd5e1; position: relative;}
-.logic-line-horizontal::after { content: ''; position: absolute; right: -5px; top: -4px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 5px solid #cbd5e1;}
-.dir-box { flex: 1; padding: 10px; border-radius: 4px; color: white; font-weight: bold; text-align: center;}
-.dir-box.low { background: #10b981; box-shadow: 0 2px 4px rgba(16,185,129,0.3);} 
-.dir-box.high { background: #ef4444; box-shadow: 0 2px 4px rgba(239,68,68,0.3);} 
-.dir-box.none { background: #64748b; box-shadow: 0 2px 4px rgba(100,116,139,0.3);} 
-.logic-explanation { margin-top: 25px; padding: 15px; background: #e0f2fe; border-left: 4px solid #0ea5e9; border-radius: 4px; color: #0f172a; line-height: 1.6; width: 90%; font-size: 13px;}
+.logic-result {
+  padding: 15px;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 18px;
+}
+.logic-result.level-0 {
+  background: #f0f9eb;
+  color: #67C23A;
+}
+.logic-result.level-1 {
+  background: #fdf6ec;
+  color: #E6A23C;
+}
+.logic-result.level-2 {
+  background: #fef0f0;
+  color: #F56C6C;
+}
+.logic-line-vertical {
+  width: 2px;
+  height: 20px;
+  background: #409EFF;
+  margin: 0 auto;
+}
+.logic-gate {
+  text-align: center;
+  padding: 10px;
+  background: #ecf5ff;
+  border-radius: 4px;
+  color: #409EFF;
+  font-weight: bold;
+}
+.logic-branches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 15px;
+}
+.logic-branch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.param-box {
+  background: #f1f5f9;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #64748b;
+  font-weight: bold;
+}
+.logic-line-horizontal {
+  width: 20px;
+  height: 2px;
+  background: #409EFF;
+}
+.dir-box {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.dir-box.high {
+  background: #fef0f0;
+  color: #F56C6C;
+}
+.dir-box.low {
+  background: #f0f9eb;
+  color: #67C23A;
+}
+.dir-box.none {
+  background: #f4f4f5;
+  color: #909399;
+}
+.logic-explanation {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+.safe-result {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #67C23A;
+}
+.dialog-2 .el-dialog__header {
+  background: #F56C6C;
+  color: white;
+}
+.dialog-1 .el-dialog__header {
+  background: #E6A23C;
+  color: white;
+}
 </style>

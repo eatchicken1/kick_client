@@ -11,6 +11,7 @@
     "build_t": "set NODE_OPTIONS=\"--openssl-legacy-provider\" & vue-cli-service build"
   },
   "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
     "axios": "^0.21.1",
     "babel-polyfill": "^6.26.0",
     "decimal.js": "^10.2.1",

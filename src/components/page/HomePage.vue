@@ -25,7 +25,7 @@
             <div>版本：Ver1.0Beta</div>
             <div>
                 <el-col :span="18">
-                    <span>版权所有： 新疆油田数据中心</span>
+                    
                 </el-col>
                 <el-col :span="6">
                     <span class="text">西南石油大学智能钻井技术团队研发</span>

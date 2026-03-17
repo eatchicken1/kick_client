@@ -4,7 +4,6 @@
             <div style="width: 100%">
                 <!-- <img style="width: 10%; height: 20%" src="../../assets/logo.jpg" /> -->
                 <h1 >早期溢流智能预警系统</h1>
-                <div style="font-size: 25px">新疆油田</div>
             </div>
         </div>
         <div class="ms-login">
