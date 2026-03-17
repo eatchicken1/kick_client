@@ -21,6 +21,20 @@
           </el-date-picker>
         </el-form-item>
 
+        <el-form-item label="回放速率" class="speed-form-item">
+          <el-radio-group
+            v-model="searchForm.playbackSpeed"
+            size="small"
+            @change="handlePlaybackSpeedChange">
+            <el-radio-button
+              v-for="speed in playbackSpeedOptions"
+              :key="speed"
+              :label="speed">
+              {{ formatPlaybackSpeedLabel(speed) }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
         <el-form-item>
           <el-button 
             type="success" 
@@ -47,11 +61,11 @@
         :closable="false" 
         style="margin-bottom: 15px;" />
 
-      <div v-if="isSimulating" class="warning-banner" :class="'warning-' + warningLevel">
-        <i :class="warningLevel === 0 ? 'el-icon-success' : 'el-icon-warning'"></i>
-        <span v-if="warningLevel === 0">井筒状态正常</span>
-        <span v-else-if="warningLevel === 1">⚠️ {{ latestWarningMsg }}</span>
-        <span v-else-if="warningLevel === 2">🔴 {{ latestWarningMsg }}</span>
+      <div v-if="hasData" class="speed-status-row">
+        <el-tag size="small" type="info" effect="plain">当前回放速率 {{ currentPlaybackSpeedLabel }}</el-tag>
+        <span class="speed-status-text">
+          历史数据模拟按 {{ currentPlaybackSpeedLabel }} 推送，倍速越高，六条曲线刷新越快。
+        </span>
       </div>
 
       <div class="charts-container" v-if="hasData">
@@ -66,12 +80,98 @@
 	      <div v-if="!isSimulating && hasData" class="chart-hint">
         <i class="el-icon-info"></i> 监测已停止，图表数据已保留。可使用底部滑块查看历史数据。
       </div>
+
     </el-card>
 
-    <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="700px" :class="'dialog-' + warningLevel">
+    <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="860px" :class="'dialog-' + warningLevel">
+      <div v-if="alertPanelVisible" class="popup-alert-body">
+        <div class="alert-panel-shell">
+          <div class="evidence-alert-banner">
+            <div class="evidence-alert-main">
+              <div class="evidence-alert-kicker">{{ alertStateText }}</div>
+              <div class="evidence-alert-title">{{ alertHeadline }}</div>
+              <div class="evidence-alert-desc">{{ alertDescription }}</div>
+            </div>
+            <div class="evidence-alert-meta">
+              <span class="evidence-meta-pill">异常参数 {{ anomalyMetricCount }}/{{ evidenceRows.length }}</span>
+              <span class="evidence-meta-pill">井深 {{ latestDepthText }}</span>
+              <span class="evidence-meta-pill">{{ latestDrillingConditionText }}</span>
+            </div>
+          </div>
+
+          <div class="evidence-table-wrap">
+            <div class="evidence-table-head">
+              <div>
+                <div class="evidence-table-title">机理证据链</div>
+                <div class="evidence-table-subtitle">只要后端任一核心参数返回 `isAnomaly = true`，这里就会联动展示越界证据。</div>
+              </div>
+              <div class="evidence-table-legend">
+                <span class="legend-dot legend-danger"></span>
+                <span>红色行为越界参数</span>
+              </div>
+            </div>
+
+            <el-table
+              :data="evidenceRows"
+              border
+              size="small"
+              :row-style="getEvidenceRowStyle"
+              class="evidence-table">
+              <el-table-column label="监测参数" min-width="180">
+                <template slot-scope="{ row }">
+                  <div class="metric-cell">
+                    <span class="metric-label">{{ row.label }}</span>
+                    <span class="metric-unit">{{ row.unit }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="实时原值" width="120" align="center">
+                <template slot-scope="{ row }">
+                  {{ formatNumber(row.originalValue, row.precision) }}
+                </template>
+              </el-table-column>
+
+              <el-table-column label="PTD偏离" width="120" align="center">
+                <template slot-scope="{ row }">
+                  <span :class="row.isAnomaly ? 'ptd-text-danger' : 'ptd-text-normal'">
+                    {{ formatNumber(row.ptdValue, 4) }}
+                  </span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="MAD动态阈值" min-width="190" align="center">
+                <template slot-scope="{ row }">
+                  <span class="threshold-chip">
+                    [ {{ formatNumber(row.lowerThreshold, 4) }} , {{ formatNumber(row.upperThreshold, 4) }} ]
+                  </span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="机理方向" width="110" align="center">
+                <template slot-scope="{ row }">
+                  <span class="direction-pill" :class="`direction-${row.directionClass}`">
+                    <i :class="row.directionIcon"></i>
+                    {{ row.directionText }}
+                  </span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="判定" width="110" align="center">
+                <template slot-scope="{ row }">
+                  <el-tag :type="row.isAnomaly ? 'danger' : 'success'" size="small" effect="dark">
+                    {{ row.isAnomaly ? '越界告警' : '区间内' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
       <div class="logic-tree-container" v-if="latestWarningMsg">
         <div class="logic-result" :class="'level-' + warningLevel">
-          <i :class="warningLevel === 2 ? 'el-icon-warning' : 'el-icon-info'"></i> 
+          <i :class="warningLevel >= 2 ? 'el-icon-warning' : 'el-icon-info'"></i> 
           诊断结论: <strong>{{ latestWarningMsg }}</strong>
         </div>
         <div class="logic-line-vertical"></div>
@@ -100,10 +200,25 @@ import { Message, Notification } from 'element-ui';
 
 const MAX_POINTS = 300;
 const METRIC_KEYS = ['spp', 'flow', 'volume', 'hookload', 'torque', 'rop'];
+const PLAYBACK_SPEED_OPTIONS = [1, 2, 5, 10];
+const METRIC_DEFINITIONS = [
+  { chartKey: 'spp', dtoKey: 'spp', label: '立压 SPP', unit: 'MPa', precision: 2 },
+  { chartKey: 'flow', dtoKey: 'outletFlow', label: '出口流量 Flow', unit: '%', precision: 2 },
+  { chartKey: 'volume', dtoKey: 'poolVolume', label: '总池体积 Volume', unit: 'm³', precision: 2 },
+  { chartKey: 'hookload', dtoKey: 'hookLoad', label: '钩载 HKLA', unit: 'kN', precision: 2 },
+  { chartKey: 'torque', dtoKey: 'torque', label: '扭矩 Torque', unit: 'kN.m', precision: 2 },
+  { chartKey: 'rop', dtoKey: 'rop', label: '钻时 ROP', unit: 'min/m', precision: 2 }
+];
 
-const RULE_KNOWLEDGE_BASE = {
-  一级预警: {
-    desc: '钻遇地层裂缝或溶洞时，钻头突然失去反作用力，导致钻时、扭矩、立压骤降，钩载上升。',
+const ALERT_DURATION_RULES = {
+  level3MinSeconds: 45,
+  level2MinSeconds: 60,
+  level1MinSeconds: 30
+};
+
+const RISK_TREE_KNOWLEDGE_BASE = {
+  溢流动态前兆: {
+    desc: '第四章 W1 井结论强调，立压、扭矩、钩载、钻时在关键窗口内同步突破阈值，才能从压力、力学与破岩作用多维机理上验证放空前兆。',
     conditions: [
       { name: '立压', icon: '⏱️', dir: 'low', text: '突破下限' },
       { name: '扭矩', icon: '⚙️', dir: 'low', text: '突破下限' },
@@ -111,21 +226,29 @@ const RULE_KNOWLEDGE_BASE = {
       { name: '钩载', icon: '🏗️', dir: 'high', text: '突破上限' }
     ]
   },
-  二级预警: {
-    desc: '地层流体侵入井筒导致液柱密度降低，因流体膨胀导致出口流量与泥浆池体积增加。',
+  气侵溢流: {
+    desc: '风险树中“立压下降 + 出口流量增加 + 总池体积增加”对应气侵溢流，需要把单参数波动与多参数协同异常区分开。',
     conditions: [
       { name: '立压', icon: '⏱️', dir: 'low', text: '突破下限' },
       { name: '出口流量', icon: '🌊', dir: 'high', text: '突破上限' },
       { name: '总池体积', icon: '🛢️', dir: 'high', text: '突破上限' }
     ]
   },
-  关注: {
-    desc: '井筒内流体压力已建立新平衡，立压不再下降但出口流量和池体积仍在增加。',
+  后期溢流: {
+    desc: '风险树指出，立压趋于稳定后若出口流量与总池体积仍持续增加，应视作后期溢流而非偶发单点异常。',
     conditions: [
       { name: '立压', icon: '⏱️', dir: 'none', text: '保持稳定' },
       { name: '出口流量', icon: '🌊', dir: 'high', text: '突破上限' },
       { name: '总池体积', icon: '🛢️', dir: 'high', text: '突破上限' }
     ]
+  },
+  多参数协同异常: {
+    desc: '第四章强调，多参数同时偏离动态阈值，才能有效排除传感器误差或单一地层块扰动带来的假异常。',
+    conditions: []
+  },
+  单参数持续异常: {
+    desc: '单参数瞬时越界不应直接归入预警；只有持续一段时间后，才按三级关注级处理并继续观察是否演化为协同异常。',
+    conditions: []
   }
 };
 
@@ -148,15 +271,20 @@ export default {
         shortWindow: 10,
         longWindow: 100,
         madWindow: 500,
-        kFactor: 3.0
+        kFactor: 3.0,
+        playbackSpeed: 1
       },
       isSimulating: false,
       isColdStart: false,
       hasData: false,
       latestWarningMsg: '',
       latestWarningType: '',
+      latestAlertType: '',
       dialogVisible: false,
       hubConnection: null,
+      latestRealtimeDto: null,
+      activeAlertSegment: null,
+      currentAlertSeverity: 0,
       chartInstances: {},
       chartData: {
         times: [],
@@ -178,28 +306,85 @@ export default {
     currentWellId() {
       return this.$store.state.jh || '';
     },
+    playbackSpeedOptions() {
+      return PLAYBACK_SPEED_OPTIONS;
+    },
     warningLevel() {
-      if (!this.latestWarningMsg) return 0;
-      if (this.latestWarningMsg.includes('一级')) return 2;
-      if (this.latestWarningMsg.includes('二级')) return 1;
-      return 1;
+      return this.currentAlertSeverity;
+    },
+    evidenceRows() {
+      return this.getEvidenceRows(this.latestRealtimeDto);
+    },
+    anomalyMetricCount() {
+      return this.evidenceRows.filter((row) => row.isAnomaly).length;
+    },
+    alertPanelVisible() {
+      return this.warningLevel > 0;
+    },
+    alertStateText() {
+      if (this.warningLevel === 3) return '一级预警';
+      if (this.warningLevel === 2) return '二级预警';
+      if (this.warningLevel === 1) return '三级预警';
+      return '实时参数告警';
+    },
+    alertHeadline() {
+      if (this.latestWarningMsg) {
+        return this.latestWarningMsg;
+      }
+
+      const labels = this.evidenceRows
+        .filter((row) => row.isAnomaly)
+        .map((row) => row.label.replace(/\s+[A-Z]+$/, ''));
+
+      if (labels.length === 0) {
+        return '井筒状态正常';
+      }
+
+      return `检测到 ${labels.length} 项核心参数突破动态阈值：${labels.join('、')}`;
+    },
+    alertDescription() {
+      return '预警按照第四章的风险树思路，综合连续时长、超阈倍数和多参数协同性后再触发；单点异常不直接计入预警，当前采用 30s / 45s / 60s 的持续窗口分级。';
+    },
+    latestDepthText() {
+      if (!this.latestRealtimeDto || this.latestRealtimeDto.depth === null || this.latestRealtimeDto.depth === undefined) {
+        return '--';
+      }
+      return `${this.formatNumber(this.latestRealtimeDto.depth, 2)} m`;
+    },
+    latestDrillingConditionText() {
+      return this.latestRealtimeDto && this.latestRealtimeDto.drillingCondition
+        ? this.latestRealtimeDto.drillingCondition
+        : '工况未返回';
     },
     dialogTitle() {
-      if (this.warningLevel === 0) return '✅ 综合工况风险树溯源';
-      if (this.warningLevel === 2) return '🔴 综合工况风险树溯源 - 一级预警';
-      return '⚠️ 综合工况风险树溯源 - 二级预警';
+      if (this.warningLevel === 3) return '🔴 一级预警';
+      if (this.warningLevel === 2) return '⚠️ 二级预警';
+      if (this.warningLevel === 1) return '🔎 三级预警';
+      return '综合异常诊断';
+    },
+    currentPlaybackSpeedLabel() {
+      return this.formatPlaybackSpeedLabel(this.searchForm.playbackSpeed);
     },
     activeConditions() {
-      if (!this.latestWarningMsg) return [];
-      if (this.latestWarningMsg.includes('一级')) return RULE_KNOWLEDGE_BASE.一级预警.conditions;
-      if (this.latestWarningMsg.includes('二级')) return RULE_KNOWLEDGE_BASE.二级预警.conditions;
-      return RULE_KNOWLEDGE_BASE.关注.conditions;
+      if (!this.latestAlertType) return [];
+
+      const preset = RISK_TREE_KNOWLEDGE_BASE[this.latestAlertType];
+      if (preset && preset.conditions && preset.conditions.length > 0) {
+        return preset.conditions;
+      }
+
+      return this.evidenceRows
+        .filter((row) => row.isAnomaly)
+        .map((row) => ({
+          name: row.label,
+          icon: row.direction > 0 ? '↑' : row.direction < 0 ? '↓' : '·',
+          dir: row.direction > 0 ? 'high' : row.direction < 0 ? 'low' : 'none',
+          text: row.direction > 0 ? '突破上限' : row.direction < 0 ? '突破下限' : '保持稳定'
+        }));
     },
     activeDescription() {
-      if (!this.latestWarningMsg) return '';
-      if (this.latestWarningMsg.includes('一级')) return RULE_KNOWLEDGE_BASE.一级预警.desc;
-      if (this.latestWarningMsg.includes('二级')) return RULE_KNOWLEDGE_BASE.二级预警.desc;
-      return RULE_KNOWLEDGE_BASE.关注.desc;
+      if (!this.latestAlertType) return '';
+      return (RISK_TREE_KNOWLEDGE_BASE[this.latestAlertType] || {}).desc || '';
     },
   },
   watch: {
@@ -291,8 +476,37 @@ export default {
         shortWindow: this.searchForm.shortWindow,
         longWindow: this.searchForm.longWindow,
         madWindow: this.searchForm.madWindow,
-        kFactor: this.searchForm.kFactor
+        kFactor: this.searchForm.kFactor,
+        playbackSpeed: Number(this.searchForm.playbackSpeed) || 1
       });
+    },
+
+    formatPlaybackSpeedLabel(speed) {
+      const normalizedSpeed = Number(speed) || 1;
+      return `${normalizedSpeed}x`;
+    },
+
+    async handlePlaybackSpeedChange(value) {
+      const nextSpeed = Number(value) || 1;
+      this.searchForm.playbackSpeed = nextSpeed;
+
+      const connection = this.hubConnection;
+      const isConnected =
+        connection &&
+        connection.state === signalR.HubConnectionState.Connected;
+
+      if (!this.isSimulating || !isConnected) {
+        Message.success(`回放速率已切换为 ${this.formatPlaybackSpeedLabel(nextSpeed)}，下次启动立即生效`);
+        return;
+      }
+
+      try {
+        await connection.send('UpdateSimulationSpeedAsync', nextSpeed);
+        Message.success(`回放速率已切换为 ${this.formatPlaybackSpeedLabel(nextSpeed)}`);
+      } catch (err) {
+        const errMsg = (err && err.message) || String(err);
+        Message.error(`速率切换失败: ${errMsg}`);
+      }
     },
 
     resetChartData() {
@@ -307,6 +521,10 @@ export default {
       this.chartData.kickWarningAreas = [];
       this.latestWarningMsg = '';
       this.latestWarningType = '';
+      this.latestAlertType = '';
+      this.latestRealtimeDto = null;
+      this.activeAlertSegment = null;
+      this.currentAlertSeverity = 0;
       this.lastWarningTime = 0;
       this.dialogVisible = false;
     },
@@ -376,7 +594,7 @@ export default {
         },
         tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
         legend: { data: ['原始值', 'PTD偏离', 'MAD上限', 'MAD下限'], top: 15, right: 20 },
-        grid: { left: '60px', right: '60px', bottom: '45px', top: '75px' },
+        grid: { left: '78px', right: '82px', bottom: '45px', top: '75px' },
         dataZoom: [
           {
             type: 'inside',
@@ -406,6 +624,8 @@ export default {
           {
             type: 'value',
             name: '原始值',
+            nameLocation: 'middle',
+            nameGap: 36,
             scale: true,
             inverse: isInverse,
             axisLabel: { color },
@@ -414,6 +634,8 @@ export default {
           {
             type: 'value',
             name: 'PTD基线',
+            nameLocation: 'middle',
+            nameGap: 40,
             scale: true,
             position: 'right',
             axisLabel: { color: '#eab308' },
@@ -515,6 +737,285 @@ export default {
       target.lower.push(null);
     },
 
+    getEvidenceRows(dto) {
+      return METRIC_DEFINITIONS.map((metric) => {
+        const source = dto && dto[metric.dtoKey] ? dto[metric.dtoKey] : {};
+        const direction = this.normalizeDirection(source.direction);
+        const isAnomaly = Boolean(source.isAnomaly);
+
+        return {
+          ...metric,
+          originalValue: source.originalValue,
+          ptdValue: source.ptdValue,
+          upperThreshold: source.upperThreshold,
+          lowerThreshold: source.lowerThreshold,
+          isAnomaly,
+          direction,
+          directionText: direction > 0 ? '上冲' : direction < 0 ? '下探' : '稳定',
+          directionClass: direction > 0 ? 'high' : direction < 0 ? 'low' : 'steady',
+          directionIcon: direction > 0 ? 'el-icon-top' : direction < 0 ? 'el-icon-bottom' : 'el-icon-right'
+        };
+      });
+    },
+
+    formatAlertLevelLabel(level) {
+      if (level === 3) return '一级预警';
+      if (level === 2) return '二级预警';
+      if (level === 1) return '三级预警';
+      return '';
+    },
+
+    getAlertLevelType(level) {
+      if (level === 3) return 'error';
+      if (level === 2) return 'warning';
+      if (level === 1) return 'info';
+      return 'info';
+    },
+
+    getRowThresholdMagnitude(row) {
+      const halfBand = Math.abs((row.upperThreshold || 0) - (row.lowerThreshold || 0)) / 2;
+      return Math.max(
+        Math.abs(row.upperThreshold || 0),
+        Math.abs(row.lowerThreshold || 0),
+        halfBand,
+        1e-3
+      );
+    },
+
+    getRowAlertRatio(row) {
+      if (!row || !row.isAnomaly) return 0;
+      return Math.abs(row.ptdValue || 0) / this.getRowThresholdMagnitude(row);
+    },
+
+    getRiskTypePriority(type) {
+      const priorityMap = {
+        溢流动态前兆: 5,
+        气侵溢流: 4,
+        后期溢流: 3,
+        多参数协同异常: 2,
+        单参数持续异常: 1
+      };
+
+      return priorityMap[type] || 0;
+    },
+
+    evaluateAlertPoint(dto) {
+      const rows = this.getEvidenceRows(dto);
+      const anomalyRows = rows.filter((row) => row.isAnomaly);
+
+      if (anomalyRows.length === 0) {
+        return null;
+      }
+
+      const rowMap = rows.reduce((acc, row) => {
+        acc[row.dtoKey] = row;
+        return acc;
+      }, {});
+
+      const hasSppLow = rowMap.spp && rowMap.spp.isAnomaly && rowMap.spp.direction < 0;
+      const hasFlowHigh = rowMap.outletFlow && rowMap.outletFlow.isAnomaly && rowMap.outletFlow.direction > 0;
+      const hasVolumeHigh = rowMap.poolVolume && rowMap.poolVolume.isAnomaly && rowMap.poolVolume.direction > 0;
+      const hasTorqueLow = rowMap.torque && rowMap.torque.isAnomaly && rowMap.torque.direction < 0;
+      const hasRopLow = rowMap.rop && rowMap.rop.isAnomaly && rowMap.rop.direction < 0;
+      const hasHookHigh = rowMap.hookLoad && rowMap.hookLoad.isAnomaly && rowMap.hookLoad.direction > 0;
+
+      let riskType = '单参数持续异常';
+      if (hasSppLow && hasTorqueLow && hasRopLow && hasHookHigh) {
+        riskType = '溢流动态前兆';
+      } else if (hasSppLow && hasFlowHigh && hasVolumeHigh) {
+        riskType = '气侵溢流';
+      } else if ((!rowMap.spp || !rowMap.spp.isAnomaly) && hasFlowHigh && hasVolumeHigh) {
+        riskType = '后期溢流';
+      } else if (anomalyRows.length >= 2) {
+        riskType = '多参数协同异常';
+      }
+
+      const ratios = anomalyRows.map((row) => this.getRowAlertRatio(row));
+      const maxRatio = ratios.length > 0 ? Math.max(...ratios) : 0;
+      const abrupt = maxRatio >= 3 || (hasRopLow && rowMap.rop && Number(rowMap.rop.originalValue || 0) <= 0.01);
+
+      return {
+        riskType,
+        anomalyRows,
+        anomalyCount: anomalyRows.length,
+        maxRatio,
+        abrupt,
+        structuredRisk: ['溢流动态前兆', '气侵溢流', '后期溢流'].includes(riskType)
+      };
+    },
+
+    createAlertSegment(point, pointTs, timeStr) {
+      return {
+        startTs: pointTs,
+        lastTs: pointTs,
+        startTimeStr: timeStr,
+        lastTimeStr: timeStr,
+        pointCount: 1,
+        maxRatio: point.maxRatio,
+        maxAnomalyCount: point.anomalyCount,
+        abrupt: point.abrupt,
+        structuredRisk: point.structuredRisk,
+        primaryType: point.riskType,
+        highestNotifiedLevel: 0,
+        areaIndex: -1
+      };
+    },
+
+    updateAlertSegment(segment, point, pointTs, timeStr) {
+      segment.lastTs = pointTs;
+      segment.lastTimeStr = timeStr;
+      segment.pointCount += 1;
+      segment.maxRatio = Math.max(segment.maxRatio, point.maxRatio);
+      segment.maxAnomalyCount = Math.max(segment.maxAnomalyCount, point.anomalyCount);
+      segment.abrupt = segment.abrupt || point.abrupt;
+      segment.structuredRisk = segment.structuredRisk || point.structuredRisk;
+
+      if (this.getRiskTypePriority(point.riskType) >= this.getRiskTypePriority(segment.primaryType)) {
+        segment.primaryType = point.riskType;
+      }
+    },
+
+    computeSegmentSeverity(segment) {
+      const durationSeconds = segment.pointCount * 10;
+
+      if (
+        durationSeconds >= ALERT_DURATION_RULES.level1MinSeconds &&
+        (segment.abrupt || segment.maxRatio >= 3 || (segment.primaryType === '溢流动态前兆' && segment.maxAnomalyCount >= 4))
+      ) {
+        return 3;
+      }
+
+      if (
+        durationSeconds >= ALERT_DURATION_RULES.level2MinSeconds &&
+        (segment.maxRatio >= 2 || segment.maxAnomalyCount >= 2 || segment.structuredRisk)
+      ) {
+        return 2;
+      }
+
+      if (durationSeconds >= ALERT_DURATION_RULES.level3MinSeconds) {
+        return 1;
+      }
+
+      return 0;
+    },
+
+    syncAlertArea(segment, level, timeStr) {
+      if (!segment) return;
+
+      if (level <= 0) {
+        return;
+      }
+
+      const levelLabel = this.formatAlertLevelLabel(level);
+
+      if (segment.areaIndex === -1) {
+        this.chartData.kickWarningAreas.push([
+          { xAxis: segment.startTimeStr, name: levelLabel },
+          { xAxis: timeStr }
+        ]);
+        segment.areaIndex = this.chartData.kickWarningAreas.length - 1;
+        return;
+      }
+
+      const area = this.chartData.kickWarningAreas[segment.areaIndex];
+      if (!area) return;
+
+      area[0].name = levelLabel;
+      area[1] = { xAxis: timeStr };
+    },
+
+    clearCurrentAlertState() {
+      this.activeAlertSegment = null;
+      this.currentAlertSeverity = 0;
+      this.latestAlertType = '';
+      this.latestWarningMsg = '';
+      this.latestWarningType = '';
+      this.dialogVisible = false;
+    },
+
+    pickPayloadValue(source, keys, fallback = null) {
+      if (!source || typeof source !== 'object') return fallback;
+
+      for (let i = 0; i < keys.length; i += 1) {
+        const key = keys[i];
+        if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined && source[key] !== null) {
+          return source[key];
+        }
+      }
+
+      return fallback;
+    },
+
+    normalizeNumber(value, fallback = null) {
+      if (value === undefined || value === null || value === '') return fallback;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    },
+
+    normalizeBoolean(value) {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'string') return value.toLowerCase() === 'true';
+      return Boolean(value);
+    },
+
+    normalizeDirection(value) {
+      if (value === undefined || value === null || value === '') return 0;
+      if (typeof value === 'number') return value > 0 ? 1 : value < 0 ? -1 : 0;
+
+      const text = String(value).toLowerCase();
+      if (text === 'high') return 1;
+      if (text === 'low') return -1;
+      return 0;
+    },
+
+    normalizeSeverity(value) {
+      if (value === undefined || value === null || value === '') return 0;
+      if (typeof value === 'number') return value;
+
+      const text = String(value).toLowerCase();
+      if (text === 'level1') return 3;
+      if (text === 'level2') return 2;
+      if (text === 'observation') return 1;
+      return 0;
+    },
+
+    normalizeMetricDto(source) {
+      if (!source || typeof source !== 'object') return null;
+
+      return {
+        originalValue: this.normalizeNumber(this.pickPayloadValue(source, ['originalValue', 'OriginalValue'])),
+        ptdValue: this.normalizeNumber(this.pickPayloadValue(source, ['ptdValue', 'PtdValue']), 0),
+        upperThreshold: this.normalizeNumber(this.pickPayloadValue(source, ['upperThreshold', 'UpperThreshold']), 0),
+        lowerThreshold: this.normalizeNumber(this.pickPayloadValue(source, ['lowerThreshold', 'LowerThreshold']), 0),
+        isAnomaly: this.normalizeBoolean(this.pickPayloadValue(source, ['isAnomaly', 'IsAnomaly'], false)),
+        direction: this.normalizeDirection(this.pickPayloadValue(source, ['direction', 'Direction'], 0))
+      };
+    },
+
+    normalizeRealtimeDto(payload) {
+      if (!payload || typeof payload !== 'object') return null;
+
+      return {
+        logTime: this.pickPayloadValue(payload, ['logTime', 'LogTime']),
+        depth: this.normalizeNumber(this.pickPayloadValue(payload, ['depth', 'Depth'])),
+        poolVolume: this.normalizeMetricDto(this.pickPayloadValue(payload, ['poolVolume', 'PoolVolume'])),
+        outletFlow: this.normalizeMetricDto(this.pickPayloadValue(payload, ['outletFlow', 'OutletFlow'])),
+        spp: this.normalizeMetricDto(this.pickPayloadValue(payload, ['spp', 'Spp'])),
+        hookLoad: this.normalizeMetricDto(this.pickPayloadValue(payload, ['hookLoad', 'HookLoad'])),
+        rop: this.normalizeMetricDto(this.pickPayloadValue(payload, ['rop', 'Rop'])),
+        torque: this.normalizeMetricDto(this.pickPayloadValue(payload, ['torque', 'Torque'])),
+        isKickWarning: this.normalizeBoolean(this.pickPayloadValue(payload, ['isKickWarning', 'IsKickWarning'], false)),
+        warningType: this.pickPayloadValue(payload, ['warningType', 'WarningType'], ''),
+        severity: this.normalizeSeverity(this.pickPayloadValue(payload, ['severity', 'Severity'], 0)),
+        drillingCondition: this.pickPayloadValue(payload, ['drillingCondition', 'DrillingCondition'], ''),
+        sopActions: this.pickPayloadValue(payload, ['sopActions', 'SopActions'], [])
+      };
+    },
+
+    dtoHasAnyAnomaly(dto) {
+      return METRIC_DEFINITIONS.some((metric) => dto && dto[metric.dtoKey] && dto[metric.dtoKey].isAnomaly);
+    },
+
     trimWarningAreas() {
       if (this.chartData.times.length === 0 || this.chartData.kickWarningAreas.length === 0) return;
 
@@ -557,8 +1058,11 @@ export default {
       this.trimWarningAreas();
     },
 
-    appendAndRenderData(dto) {
-      if (!dto || !dto.logTime) return;
+    appendAndRenderData(payload) {
+      const dto = this.normalizeRealtimeDto(payload);
+      if (!dto) return;
+
+      this.latestRealtimeDto = dto;
 
       const parsedLogTime = this.parseDateTime(dto.logTime);
       const timeStr = parsedLogTime
@@ -581,29 +1085,41 @@ export default {
       this.isColdStart = this.chartData.times.length < this.searchForm.shortWindow;
 
       this.trimChartWindow();
+
+      const pointTs = parsedLogTime ? parsedLogTime.getTime() : Date.now();
+      const pointAlert = this.evaluateAlertPoint(dto);
+
+      if (!pointAlert) {
+        this.clearCurrentAlertState();
+        this.updateCharts();
+        return;
+      }
+
+      const canContinueSegment =
+        this.activeAlertSegment &&
+        pointTs - this.activeAlertSegment.lastTs <= 30000;
+
+      if (!canContinueSegment) {
+        this.activeAlertSegment = this.createAlertSegment(pointAlert, pointTs, timeStr);
+      } else {
+        this.updateAlertSegment(this.activeAlertSegment, pointAlert, pointTs, timeStr);
+      }
+
+      const severity = this.computeSegmentSeverity(this.activeAlertSegment);
+      this.currentAlertSeverity = severity;
+      this.latestAlertType = this.activeAlertSegment.primaryType;
+      this.latestWarningMsg = severity > 0
+        ? `${this.formatAlertLevelLabel(severity)}：${this.latestAlertType}`
+        : '';
+      this.latestWarningType = this.getAlertLevelType(severity);
+      this.dialogVisible = severity === 3;
+
+      this.syncAlertArea(this.activeAlertSegment, severity, timeStr);
       this.updateCharts();
 
-      if (dto.isKickWarning) {
-        this.latestWarningMsg = dto.warningType || '预警';
-        this.latestWarningType = this.latestWarningMsg.includes('一级') ? 'danger' : 'warning';
-
-        const now = Date.now();
-        if (now - this.lastWarningTime > 5000) {
-          this.lastWarningTime = now;
-          this.triggerWarningNotification(timeStr, this.latestWarningMsg);
-        }
-
-        const lastArea = this.chartData.kickWarningAreas[this.chartData.kickWarningAreas.length - 1];
-        if (lastArea) {
-          lastArea[1] = { xAxis: timeStr };
-        } else {
-          this.chartData.kickWarningAreas.push([
-            { xAxis: timeStr, name: dto.warningType },
-            { xAxis: timeStr }
-          ]);
-        }
-      } else if (this.latestWarningMsg) {
-        this.latestWarningMsg = '';
+      if (severity > this.activeAlertSegment.highestNotifiedLevel) {
+        this.triggerWarningNotification(timeStr, this.latestWarningMsg, severity);
+        this.activeAlertSegment.highestNotifiedLevel = severity;
       }
     },
 
@@ -649,32 +1165,37 @@ export default {
       });
     },
 
-    triggerWarningNotification(timeStr, warningMsg) {
-      const notifyType = this.warningLevel === 2 ? 'error' : 'warning';
-
-      Notification({
-        title: this.warningLevel === 2 ? '🔴 一级预警' : '⚠️ 二级预警',
-        message: `[${timeStr}] ${warningMsg}`,
-        type: notifyType,
-        duration: 6000,
-        position: 'top-right'
-      });
-
-      if (this.warningLevel === 2) {
-        this.$alert(`${warningMsg}`, '🔴 一级预警 - 溢流风险', {
-          confirmButtonText: '查看详情',
-          callback: (action) => {
-            if (action === 'confirm') {
-              this.dialogVisible = true;
-            }
-          }
+    triggerWarningNotification(timeStr, warningMsg, severity) {
+      if (severity === 3) {
+        this.dialogVisible = true;
+      } else if (severity > 0) {
+        Notification({
+          title: this.formatAlertLevelLabel(severity),
+          message: `[${timeStr}] ${warningMsg}`,
+          type: this.getAlertLevelType(severity),
+          duration: severity === 2 ? 7000 : 5000,
+          position: 'top-right'
         });
       }
 
-      const audio = new Audio();
-      audio.src = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU';
-      audio.volume = 0.3;
-      audio.play().catch(() => {});
+      if (severity >= 2) {
+        const audio = new Audio();
+        audio.src = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU';
+        audio.volume = severity === 3 ? 0.35 : 0.22;
+        audio.play().catch(() => {});
+      }
+    },
+
+    getEvidenceRowStyle({ row }) {
+      if (!row.isAnomaly) {
+        return {
+          backgroundColor: '#fff'
+        };
+      }
+
+      return {
+        background: 'linear-gradient(90deg, rgba(255, 233, 233, 0.95), rgba(255, 246, 246, 0.95))'
+      };
     },
 
     async createAndStartSimulation(startTime, wellId) {
@@ -821,6 +1342,9 @@ export default {
 
       if (connection) {
         try {
+          if (connection.state === signalR.HubConnectionState.Connected) {
+            await connection.send('StopRealtimeSimulationAsync').catch(() => {});
+          }
           await connection.stop();
         } catch (e) {
           if (!silent) {
@@ -844,6 +1368,13 @@ export default {
       if (newVal && !oldVal && !this.searchForm.startTime) {
         this.initTimeRange();
       }
+    },
+
+    formatNumber(val, decimals = 2) {
+      if (val === undefined || val === null || val === '') return '--';
+      const num = Number(val);
+      if (!Number.isFinite(num)) return '--';
+      return num.toFixed(decimals);
     }
   }
 };
@@ -856,33 +1387,6 @@ export default {
 }
 .well-alert {
   margin-bottom: 15px;
-}
-.warning-banner {
-  padding: 15px;
-  border-radius: 4px;
-  margin-bottom: 15px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: bold;
-}
-.warning-banner.warning-0 {
-  background: #f0f9eb;
-  color: #67C23A;
-  border: 1px solid #e1f3d8;
-}
-.warning-banner.warning-1 {
-  background: #fdf6ec;
-  color: #E6A23C;
-  border: 1px solid #faecd8;
-  animation: pulse 2s infinite;
-}
-.warning-banner.warning-2 {
-  background: #fef0f0;
-  color: #F56C6C;
-  border: 1px solid #fde2e2;
-  animation: pulse 1s infinite;
 }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -905,12 +1409,187 @@ export default {
   align-items: center;
   gap: 8px;
 }
+.speed-form-item ::v-deep .el-radio-button__inner {
+  min-width: 54px;
+  text-align: center;
+}
+.speed-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #4b5563;
+  font-size: 13px;
+}
+.speed-status-text {
+  line-height: 1.5;
+}
 .chart-item-large {
   width: 100%;
   height: 350px;
   background: #ffffff;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+}
+.popup-alert-body {
+  margin-bottom: 18px;
+}
+.alert-panel-shell {
+  margin-top: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #fecaca;
+  box-shadow: 0 20px 36px rgba(185, 28, 28, 0.18);
+  background: #fff7f7;
+}
+.evidence-alert-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 46%, #ef4444 100%);
+}
+.evidence-alert-main {
+  min-width: 0;
+}
+.evidence-alert-kicker {
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 1.6px;
+  opacity: 0.88;
+  text-transform: uppercase;
+}
+.evidence-alert-title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.evidence-alert-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+.evidence-alert-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 220px;
+}
+.evidence-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.evidence-table-wrap {
+  padding: 18px 18px 20px;
+}
+.evidence-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.evidence-table-title {
+  color: #7f1d1d;
+  font-size: 18px;
+  font-weight: 700;
+}
+.evidence-table-subtitle {
+  margin-top: 4px;
+  color: #7f1d1d;
+  opacity: 0.78;
+  font-size: 13px;
+}
+.evidence-table-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #991b1b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+.legend-danger {
+  background: #ef4444;
+}
+.evidence-table {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.metric-label {
+  color: #1f2937;
+  font-weight: 600;
+}
+.metric-unit {
+  color: #6b7280;
+  font-size: 12px;
+}
+.threshold-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+.direction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.direction-high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.direction-low {
+  background: #fff7ed;
+  color: #c2410c;
+}
+.direction-steady {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.ptd-text-danger {
+  color: #dc2626;
+  font-weight: 700;
+}
+.ptd-text-normal {
+  color: #475569;
+}
+.alert-panel-slide-enter-active,
+.alert-panel-slide-leave-active {
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.alert-panel-slide-enter,
+.alert-panel-slide-leave-to {
+  opacity: 0;
+  transform: translateY(28px);
 }
 .logic-tree-container {
   padding: 20px;
@@ -925,13 +1604,17 @@ export default {
   background: #f0f9eb;
   color: #67C23A;
 }
-.logic-result.level-1 {
-  background: #fdf6ec;
-  color: #E6A23C;
-}
-.logic-result.level-2 {
+.logic-result.level-3 {
   background: #fef0f0;
   color: #F56C6C;
+}
+.logic-result.level-1 {
+  background: #ecf5ff;
+  color: #409EFF;
+}
+.logic-result.level-2 {
+  background: #fdf6ec;
+  color: #E6A23C;
 }
 .logic-line-vertical {
   width: 2px;
@@ -1001,12 +1684,31 @@ export default {
   font-size: 18px;
   color: #67C23A;
 }
-.dialog-2 .el-dialog__header {
+.dialog-3 .el-dialog__header {
   background: #F56C6C;
   color: white;
 }
-.dialog-1 .el-dialog__header {
+.dialog-2 .el-dialog__header {
   background: #E6A23C;
   color: white;
+}
+.dialog-1 .el-dialog__header {
+  background: #409EFF;
+  color: white;
+}
+@media (max-width: 900px) {
+  .evidence-alert-banner {
+    flex-direction: column;
+  }
+
+  .evidence-alert-meta {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .evidence-table-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
