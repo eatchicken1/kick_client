@@ -1,7 +1,8 @@
 module.exports = {
-    baseUrl: './',
+    publicPath: './',
     assetsDir: 'static',
     productionSourceMap: false,
+    parallel: false,
     devServer: {
         port: 8080,
         proxy: {

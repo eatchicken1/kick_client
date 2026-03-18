@@ -2,7 +2,8 @@ import request from '../utils/request';
 
 const URL = "http://localhost:17600/api/";
 // 若综合异常检测 PTD 接口部署在其它端口，可改为例如 "http://localhost:18300/api/"
-const MONITOR_API_BASE = URL;
+export const MONITOR_API_BASE = URL;
+export const getMonitorHubUrl = () => MONITOR_API_BASE.replace(/\/api\/?$/, '') + '/api/hub/monitor';
 //  const URL = "http://39.96.65.89:7780/api/";
 
 const getAddress = (s) => {
@@ -581,13 +582,32 @@ export const wellboremudloss2 = (data) => {
     });
 }
 
-// 综合异常检测 PTD 溢流早期预警分析
-export const getPtdEarlyWarningApi = (params) => {
+// 综合异常检测 / 溢流预警统一分析
+export const getPtdAnalysisHistoryApi = (params) => {
     return request({
-        url: MONITOR_API_BASE + "Monitor/early-warning/ptd-analysis",
+        url: MONITOR_API_BASE + "ptd/analysis/history",
         method: 'get',
         timeout: 60000,
         params: params,
+    });
+}
+
+export const getPtdEarlyWarningApi = getPtdAnalysisHistoryApi;
+
+export const getPtdAnalysisConfigApi = () => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/config",
+        method: 'get',
+        timeout: 60000,
+    });
+}
+
+export const updatePtdEventStatusApi = (data) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/event-status",
+        method: 'post',
+        timeout: 60000,
+        data,
     });
 }
 // //地层孔隙压力计算PpdcpressureCalc
@@ -598,4 +618,3 @@ export const getPtdEarlyWarningApi = (params) => {
 //         params: data,
 //     });
 // }
-

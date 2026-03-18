@@ -202,6 +202,11 @@ export default new Router({
                         meta: { title: '综合异常检测' }
                     },
                     {
+                        path: 'ComprehensiveAnomalyHistory',
+                        component: () => import('../components/page/assistant-analyse/ComprehensiveAnomaly_history.vue'),
+                        meta: { title: '综合异常历史分析' }
+                    },
+                    {
                         path: 'TcnBitcnAtWarning',
                         component: () => import('../components/page/assistant-analyse/TcnBitcnAtWarning.vue'),
                         meta: { title: '钻时异常检测' }
