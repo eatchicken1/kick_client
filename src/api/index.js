@@ -594,11 +594,48 @@ export const getPtdAnalysisHistoryApi = (params) => {
 
 export const getPtdEarlyWarningApi = getPtdAnalysisHistoryApi;
 
-export const getPtdAnalysisConfigApi = () => {
+export const getPtdAnalysisConfigApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/config",
         method: 'get',
         timeout: 60000,
+        params: params,
+    });
+}
+
+export const getPtdAnalysisConfigEditorApi = (params) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/config/editor",
+        method: 'get',
+        timeout: 60000,
+        params: params,
+    });
+}
+
+export const getPtdRealtimeRuntimeStatusApi = (params) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/runtime-status",
+        method: 'get',
+        timeout: 60000,
+        params,
+    });
+}
+
+export const savePtdAnalysisConfigVersionApi = (data) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/config/version",
+        method: 'post',
+        timeout: 60000,
+        data,
+    });
+}
+
+export const activatePtdAnalysisConfigVersionApi = (data) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/config/activate",
+        method: 'post',
+        timeout: 60000,
+        data,
     });
 }
 
@@ -608,6 +645,15 @@ export const updatePtdEventStatusApi = (data) => {
         method: 'post',
         timeout: 60000,
         data,
+    });
+}
+
+export const getPtdEventDetailApi = (params) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/event-detail",
+        method: 'get',
+        timeout: 60000,
+        params,
     });
 }
 // //地层孔隙压力计算PpdcpressureCalc

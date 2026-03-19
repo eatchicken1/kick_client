@@ -145,6 +145,10 @@ export default {
                             title: '综合异常历史分析'
                         },
                         {
+                            index: 'PtdConfigManager',
+                            title: '检测配置管理'
+                        },
+                        {
                             index: 'TcnBitcnAtWarning',
                             title: '钻时异常检测'
                         }

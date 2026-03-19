@@ -46,7 +46,12 @@
       :show-highlight="false"
       :group-events="true"
       :show-event-actions="false"
+      :show-event-locate-action="true"
+      :show-event-evidence-action="true"
+      :show-event-status-column="false"
+      :show-event-table-inline="false"
       :default-window-minutes="20"
+      loading-text="正在分析历史区间并生成统一风险轨迹，请稍候..."
       empty-text="请选择时间范围后执行历史分析。"
       @status-updated="handleStatusUpdated" />
   </div>

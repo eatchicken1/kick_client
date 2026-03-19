@@ -228,8 +228,47 @@ export function normalizeFrame(raw) {
         severity,
         severityLevel: getSeverityMeta(severity).level,
         eventId: pick(raw, ['eventId', 'EventId'], ''),
+        eventRecordId: pick(raw, ['eventRecordId', 'EventRecordId'], ''),
         isNewEvent: Boolean(pick(raw, ['isNewEvent', 'IsNewEvent'], false)),
         status: normalizeStatus(pick(raw, ['status', 'Status'], 'NEW')),
+        advice: pick(raw, ['advice', 'Advice'], []) || [],
+        evidence: (pick(raw, ['evidence', 'Evidence'], []) || []).map(normalizeEvidenceItem),
+        metrics: {
+            poolVolume: normalizeMetric(pick(metricsRaw, ['poolVolume', 'PoolVolume'], {}), 'poolVolume'),
+            outletFlow: normalizeMetric(pick(metricsRaw, ['outletFlow', 'OutletFlow'], {}), 'outletFlow'),
+            standpipePress: normalizeMetric(pick(metricsRaw, ['standpipePress', 'StandpipePress'], {}), 'standpipePress'),
+            hookLoad: normalizeMetric(pick(metricsRaw, ['hookLoad', 'HookLoad'], {}), 'hookLoad'),
+            torque: normalizeMetric(pick(metricsRaw, ['torque', 'Torque'], {}), 'torque'),
+            rop: normalizeMetric(pick(metricsRaw, ['rop', 'Rop'], {}), 'rop'),
+            pumpSpmTotal: normalizeMetric(pick(metricsRaw, ['pumpSpmTotal', 'PumpSpmTotal'], {}), 'pumpSpmTotal'),
+            flowIn: normalizeMetric(pick(metricsRaw, ['flowIn', 'FlowIn'], {}), 'flowIn'),
+            gas: normalizeMetric(pick(metricsRaw, ['gas', 'Gas'], {}), 'gas'),
+            chokePressure: normalizeMetric(pick(metricsRaw, ['chokePressure', 'ChokePressure'], {}), 'chokePressure'),
+            flowBalance: normalizeMetric(pick(metricsRaw, ['flowBalance', 'FlowBalance'], {}), 'flowBalance'),
+            flowBalanceIntegral: normalizeMetric(pick(metricsRaw, ['flowBalanceIntegral', 'FlowBalanceIntegral'], {}), 'flowBalanceIntegral'),
+            pitGain: normalizeMetric(pick(metricsRaw, ['pitGain', 'PitGain'], {}), 'pitGain')
+        }
+    };
+}
+
+export function normalizeSnapshot(raw) {
+    const metricsRaw = pick(raw, ['metrics', 'Metrics'], {}) || {};
+    const timestamp = toDate(pick(raw, ['timestamp', 'Timestamp'], null));
+    const severity = normalizeSeverityCode(
+        pick(raw, ['severity', 'Severity'], 'L0'),
+        pick(raw, ['severityLevel', 'SeverityLevel'], 0)
+    );
+
+    return {
+        timestamp,
+        timestampMs: timestamp ? timestamp.getTime() : null,
+        timestampLabel: formatDateTime(timestamp),
+        depth: toNumber(pick(raw, ['depth', 'Depth'], null)),
+        activityCode: pick(raw, ['activityCode', 'ActivityCode'], ''),
+        activityBucket: pick(raw, ['activityBucket', 'ActivityBucket'], ''),
+        riskType: pick(raw, ['riskType', 'RiskType'], '正常'),
+        severity,
+        severityLevel: getSeverityMeta(severity).level,
         advice: pick(raw, ['advice', 'Advice'], []) || [],
         evidence: (pick(raw, ['evidence', 'Evidence'], []) || []).map(normalizeEvidenceItem),
         metrics: {
@@ -259,6 +298,10 @@ export function normalizeEvent(raw) {
     const endTime = toDate(pick(raw, ['endTime', 'EndTime'], null));
 
     return {
+        recordId: pick(raw, ['recordId', 'RecordId'], ''),
+        analysisRunId: pick(raw, ['analysisRunId', 'AnalysisRunId'], ''),
+        configVersionId: pick(raw, ['configVersionId', 'ConfigVersionId'], ''),
+        configVersion: pick(raw, ['configVersion', 'ConfigVersion'], ''),
         eventId: pick(raw, ['eventId', 'EventId'], ''),
         startTime,
         startTimeMs: startTime ? startTime.getTime() : null,
@@ -273,7 +316,8 @@ export function normalizeEvent(raw) {
         status: normalizeStatus(pick(raw, ['status', 'Status'], 'NEW')),
         isActive: Boolean(pick(raw, ['isActive', 'IsActive'], false)),
         evidence: (pick(raw, ['evidence', 'Evidence'], []) || []).map(normalizeEvidenceItem),
-        advice: pick(raw, ['advice', 'Advice'], []) || []
+        advice: pick(raw, ['advice', 'Advice'], []) || [],
+        snapshot: normalizeSnapshot(pick(raw, ['snapshot', 'Snapshot'], {}))
     };
 }
 
@@ -285,6 +329,42 @@ export function normalizeSampling(raw) {
         maxIntervalSec: toNumber(pick(raw, ['maxIntervalSec', 'MaxIntervalSec'], 0), 0),
         minIntervalSec: toNumber(pick(raw, ['minIntervalSec', 'MinIntervalSec'], 0), 0),
         dominantIntervalSec: toNumber(pick(raw, ['dominantIntervalSec', 'DominantIntervalSec'], 0), 0)
+    };
+}
+
+function normalizeMetricWindowConfig(raw) {
+    return {
+        shortWindowSec: toNumber(pick(raw, ['shortWindowSec', 'ShortWindowSec'], 0), 0),
+        longWindowSec: toNumber(pick(raw, ['longWindowSec', 'LongWindowSec'], 0), 0),
+        madWindowSec: toNumber(pick(raw, ['madWindowSec', 'MadWindowSec'], 0), 0),
+        kFactor: toNumber(pick(raw, ['kFactor', 'KFactor'], 0), 0)
+    };
+}
+
+export function normalizeUnifiedConfig(raw) {
+    const source = raw || {};
+    return {
+        version: pick(source, ['version', 'Version'], ''),
+        effectiveAt: toDate(pick(source, ['effectiveAt', 'EffectiveAt'], null)),
+        approvedBy: pick(source, ['approvedBy', 'ApprovedBy'], ''),
+        remark: pick(source, ['remark', 'Remark'], ''),
+        warmupWindowSec: toNumber(pick(source, ['warmupWindowSec', 'WarmupWindowSec'], 0), 0),
+        stablePumpWindowSec: toNumber(pick(source, ['stablePumpWindowSec', 'StablePumpWindowSec'], 0), 0),
+        stableVariationRatio: toNumber(pick(source, ['stableVariationRatio', 'StableVariationRatio'], 0), 0),
+        flowFactorWindowSec: toNumber(pick(source, ['flowFactorWindowSec', 'FlowFactorWindowSec'], 0), 0),
+        flowFactorClampRatio: toNumber(pick(source, ['flowFactorClampRatio', 'FlowFactorClampRatio'], 0), 0),
+        eventCooldownSec: toNumber(pick(source, ['eventCooldownSec', 'EventCooldownSec'], 0), 0),
+        gapResetFloorSec: toNumber(pick(source, ['gapResetFloorSec', 'GapResetFloorSec'], 0), 0),
+        gapResetMultiplier: toNumber(pick(source, ['gapResetMultiplier', 'GapResetMultiplier'], 0), 0),
+        outletFlow: normalizeMetricWindowConfig(pick(source, ['outletFlow', 'OutletFlow'], {})),
+        standpipePress: normalizeMetricWindowConfig(pick(source, ['standpipePress', 'StandpipePress'], {})),
+        poolVolume: normalizeMetricWindowConfig(pick(source, ['poolVolume', 'PoolVolume'], {})),
+        mechanical: normalizeMetricWindowConfig(pick(source, ['mechanical', 'Mechanical'], {})),
+        gas: normalizeMetricWindowConfig(pick(source, ['gas', 'Gas'], {})),
+        chokePressure: normalizeMetricWindowConfig(pick(source, ['chokePressure', 'ChokePressure'], {})),
+        flowBalance: normalizeMetricWindowConfig(pick(source, ['flowBalance', 'FlowBalance'], {})),
+        flowBalanceIntegral: normalizeMetricWindowConfig(pick(source, ['flowBalanceIntegral', 'FlowBalanceIntegral'], {})),
+        pitGain: normalizeMetricWindowConfig(pick(source, ['pitGain', 'PitGain'], {}))
     };
 }
 
@@ -301,8 +381,99 @@ export function normalizeHistoryResponse(payload) {
         sampling: normalizeSampling(pick(body, ['sampling', 'Sampling'], {})),
         frames,
         events,
+        analysisRunId: pick(body, ['analysisRunId', 'AnalysisRunId'], ''),
+        configVersionId: pick(body, ['configVersionId', 'ConfigVersionId'], ''),
         configVersion: pick(body, ['configVersion', 'ConfigVersion'], ''),
-        config: pick(body, ['config', 'Config'], {}) || {}
+        config: normalizeUnifiedConfig(pick(body, ['config', 'Config'], {}))
+    };
+}
+
+export function normalizeRealtimeDelivery(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    return {
+        analysisRunId: pick(body, ['analysisRunId', 'AnalysisRunId'], ''),
+        configVersionId: pick(body, ['configVersionId', 'ConfigVersionId'], ''),
+        configVersion: pick(body, ['configVersion', 'ConfigVersion'], ''),
+        frame: normalizeFrame(pick(body, ['frame', 'Frame'], {})),
+        events: (pick(body, ['events', 'Events'], []) || []).map(normalizeEvent),
+        sampling: normalizeSampling(pick(body, ['sampling', 'Sampling'], {}))
+    };
+}
+
+function normalizeVersionSummary(raw) {
+    return {
+        configVersionId: pick(raw, ['configVersionId', 'ConfigVersionId'], ''),
+        wellId: pick(raw, ['wellId', 'WellId'], ''),
+        versionNo: toNumber(pick(raw, ['versionNo', 'VersionNo'], 0), 0),
+        versionCode: pick(raw, ['versionCode', 'VersionCode'], ''),
+        versionName: pick(raw, ['versionName', 'VersionName'], ''),
+        isActive: Boolean(pick(raw, ['isActive', 'IsActive'], false)),
+        sourceWellId: pick(raw, ['sourceWellId', 'SourceWellId'], ''),
+        sourceConfigVersionId: pick(raw, ['sourceConfigVersionId', 'SourceConfigVersionId'], ''),
+        sourceVersionCode: pick(raw, ['sourceVersionCode', 'SourceVersionCode'], ''),
+        remark: pick(raw, ['remark', 'Remark'], ''),
+        createdBy: pick(raw, ['createdBy', 'CreatedBy'], ''),
+        createdAt: toDate(pick(raw, ['createdAt', 'CreatedAt'], null)),
+        createdAtLabel: formatDateTime(pick(raw, ['createdAt', 'CreatedAt'], null)),
+        updatedAt: toDate(pick(raw, ['updatedAt', 'UpdatedAt'], null)),
+        updatedAtLabel: formatDateTime(pick(raw, ['updatedAt', 'UpdatedAt'], null))
+    };
+}
+
+export function normalizeConfigDetail(raw) {
+    return {
+        ...normalizeVersionSummary(raw),
+        isDefaultConfig: Boolean(pick(raw, ['isDefaultConfig', 'IsDefaultConfig'], false)),
+        config: normalizeUnifiedConfig(pick(raw, ['config', 'Config'], {}))
+    };
+}
+
+export function normalizeConfigEditorResponse(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    return {
+        currentWellId: pick(body, ['currentWellId', 'CurrentWellId'], ''),
+        selectedConfigVersionId: pick(body, ['selectedConfigVersionId', 'SelectedConfigVersionId'], ''),
+        currentConfig: normalizeConfigDetail(pick(body, ['currentConfig', 'CurrentConfig'], {})),
+        versions: (pick(body, ['versions', 'Versions'], []) || []).map(normalizeVersionSummary),
+        cloneableWellIds: (pick(body, ['cloneableWellIds', 'CloneableWellIds'], []) || []).slice()
+    };
+}
+
+export function normalizeRealtimeRuntimeStatus(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    const sessions = (pick(body, ['sessions', 'Sessions'], []) || []).map(item => ({
+        connectionId: pick(item, ['connectionId', 'ConnectionId'], ''),
+        wellId: pick(item, ['wellId', 'WellId'], ''),
+        configVersionId: pick(item, ['configVersionId', 'ConfigVersionId'], ''),
+        configVersionCode: pick(item, ['configVersionCode', 'ConfigVersionCode'], ''),
+        startedAt: toDate(pick(item, ['startedAt', 'StartedAt'], null)),
+        startedAtLabel: formatDateTime(pick(item, ['startedAt', 'StartedAt'], null))
+    }));
+
+    return {
+        wellId: pick(body, ['wellId', 'WellId'], ''),
+        hasActiveRealtimeSessions: Boolean(pick(body, ['hasActiveRealtimeSessions', 'HasActiveRealtimeSessions'], false)),
+        activeSessionCount: toNumber(pick(body, ['activeSessionCount', 'ActiveSessionCount'], sessions.length), sessions.length),
+        sessions
+    };
+}
+
+export function normalizeEventDetailResponse(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    return {
+        event: normalizeEvent(pick(body, ['event', 'Event'], {})),
+        actionLogs: (pick(body, ['actionLogs', 'ActionLogs'], []) || []).map(item => ({
+            actionLogId: pick(item, ['actionLogId', 'ActionLogId'], ''),
+            eventRecordId: pick(item, ['eventRecordId', 'EventRecordId'], ''),
+            eventId: pick(item, ['eventId', 'EventId'], ''),
+            actionType: pick(item, ['actionType', 'ActionType'], ''),
+            beforeStatus: normalizeStatus(pick(item, ['beforeStatus', 'BeforeStatus'], 'NEW')),
+            afterStatus: normalizeStatus(pick(item, ['afterStatus', 'AfterStatus'], 'NEW')),
+            remark: pick(item, ['remark', 'Remark'], ''),
+            operator: pick(item, ['operator', 'Operator'], ''),
+            actionTime: toDate(pick(item, ['actionTime', 'ActionTime'], null)),
+            actionTimeLabel: formatDateTime(pick(item, ['actionTime', 'ActionTime'], null))
+        }))
     };
 }
 
