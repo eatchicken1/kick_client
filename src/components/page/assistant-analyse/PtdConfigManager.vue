@@ -142,22 +142,22 @@
           <el-divider>指标窗口参数</el-divider>
           <div class="metric-grid">
             <div v-for="group in metricGroups" :key="group.path" class="metric-card">
-              <div class="metric-title">{{ group.label }}</div>
+              <div class="metric-title-row">
+                <div class="metric-title">
+                  {{ group.label }}
+                  <span v-if="group.abbr" class="field-abbr">{{ group.abbr }}</span>
+                </div>
+                <el-tooltip
+                  v-if="group.description"
+                  effect="dark"
+                  placement="top"
+                  :content="group.description">
+                  <i class="el-icon-question field-help-icon"></i>
+                </el-tooltip>
+              </div>
               <div class="metric-values">
                 <div v-for="field in group.fields" :key="group.path + field.prop" class="metric-value-item">
-                  <div class="metric-label-head">
-                    <span class="field-label field-label-inline">
-                      {{ field.label }}
-                      <span v-if="field.abbr" class="field-abbr">{{ field.abbr }}</span>
-                    </span>
-                    <el-tooltip
-                      v-if="field.description"
-                      effect="dark"
-                      placement="top"
-                      :content="field.description">
-                      <i class="el-icon-question field-help-icon"></i>
-                    </el-tooltip>
-                  </div>
+                  <span class="field-label">{{ field.label }}</span>
                   <span class="field-value">
                     {{ formatValue(readConfigValue(previewConfig.config, group.path + '.' + field.prop), field) }}
                   </span>
@@ -306,22 +306,22 @@
             <el-divider>指标窗口参数</el-divider>
             <div class="metric-grid">
               <div v-for="group in metricGroups" :key="'editor-' + group.path" class="metric-card">
-                <div class="metric-title">{{ group.label }}</div>
+                <div class="metric-title-row">
+                  <div class="metric-title">
+                    {{ group.label }}
+                    <span v-if="group.abbr" class="field-abbr">{{ group.abbr }}</span>
+                  </div>
+                  <el-tooltip
+                    v-if="group.description"
+                    effect="dark"
+                    placement="top"
+                    :content="group.description">
+                    <i class="el-icon-question field-help-icon"></i>
+                  </el-tooltip>
+                </div>
                 <div class="metric-editor-grid">
                   <div v-for="field in group.fields" :key="group.path + '-editor-' + field.prop" class="metric-editor-item">
-                    <div class="metric-label-head">
-                      <label class="editor-label editor-label-inline">
-                        {{ field.label }}
-                        <span v-if="field.abbr" class="field-abbr">{{ field.abbr }}</span>
-                      </label>
-                      <el-tooltip
-                        v-if="field.description"
-                        effect="dark"
-                        placement="top"
-                        :content="field.description">
-                        <i class="el-icon-question field-help-icon"></i>
-                      </el-tooltip>
-                    </div>
+                    <label class="editor-label">{{ field.label }}</label>
                     <div class="editor-control">
                       <el-input-number
                         :value="readConfigValue(editorDraft.config, group.path + '.' + field.prop)"
@@ -376,53 +376,67 @@ const baseFields = [
 ];
 
 const metricFieldDefs = [
-  {
-    label: '短窗',
-    abbr: 'SW',
-    prop: 'shortWindowSec',
-    unit: 's',
-    min: 0,
-    step: 1,
-    description: 'Short Window。短期观察窗口，用于快速跟踪该指标最近一段时间的即时变化。'
-  },
-  {
-    label: '长窗',
-    abbr: 'LW',
-    prop: 'longWindowSec',
-    unit: 's',
-    min: 0,
-    step: 1,
-    description: 'Long Window。长期参考窗口，用于形成更平滑的基线，和短窗一起判断偏离程度。'
-  },
-  {
-    label: 'MAD 窗口',
-    abbr: 'MAD',
-    prop: 'madWindowSec',
-    unit: 's',
-    min: 0,
-    step: 1,
-    description: 'Median Absolute Deviation Window。稳健波动窗口，用于估计该指标正常波动范围。'
-  },
-  {
-    label: 'K 因子',
-    abbr: 'K',
-    prop: 'kFactor',
-    min: 0,
-    step: 0.1,
-    description: 'Threshold Multiplier。阈值放大系数，值越大越保守，越小越敏感。'
-  }
+  { label: '短窗', prop: 'shortWindowSec', unit: 's', min: 0, step: 1 },
+  { label: '长窗', prop: 'longWindowSec', unit: 's', min: 0, step: 1 },
+  { label: 'MAD 窗口', prop: 'madWindowSec', unit: 's', min: 0, step: 1 },
+  { label: 'K 因子', prop: 'kFactor', min: 0, step: 0.1 }
 ];
 
 const metricGroups = [
-  { label: '出口流量', path: 'outletFlow' },
-  { label: '立管压力', path: 'standpipePress' },
-  { label: '总池体积', path: 'poolVolume' },
-  { label: '机械参数', path: 'mechanical' },
-  { label: '全烃', path: 'gas' },
-  { label: '套压', path: 'chokePressure' },
-  { label: '流量差', path: 'flowBalance' },
-  { label: '流量差积分', path: 'flowBalanceIntegral' },
-  { label: '池增量', path: 'pitGain' }
+  {
+    label: '出口流量',
+    path: 'outletFlow',
+    abbr: 'MFOA',
+    description: '出口流量。表示井口返出钻井液流量，用于判断回流增减和流入流出是否平衡。'
+  },
+  {
+    label: '立管压力',
+    path: 'standpipePress',
+    abbr: 'SPPA',
+    description: '立管压力。表示循环系统的立压变化，用于识别压力异常、阻力变化和工况扰动。'
+  },
+  {
+    label: '总池体积',
+    path: 'poolVolume',
+    abbr: 'TVOLACT',
+    description: '总池体积。表示地面有效泥浆池总体积，是判断溢流、漏失和池量变化的关键参数。'
+  },
+  {
+    label: '机械参数',
+    path: 'mechanical',
+    abbr: 'HKLA / TORQA / ROPA',
+    description: '机械参数组合。综合钩载 HKLA、扭矩 TORQA 和钻时 ROPA，用于区分机械扰动与真实流体异常。'
+  },
+  {
+    label: '全烃',
+    path: 'gas',
+    abbr: 'GASA',
+    description: '全烃。表示返出气体总量变化，用于辅助识别地层流体侵入和气侵迹象。'
+  },
+  {
+    label: '套压',
+    path: 'chokePressure',
+    abbr: 'CHKP',
+    description: '套压。表示节流或套管侧压力变化，用于观察回压、井口压力和节流状态异常。'
+  },
+  {
+    label: '流量差',
+    path: 'flowBalance',
+    abbr: 'DeltaFlow',
+    description: '流量差。表示入口流量与出口流量的差值，用于快速识别流入流出失衡。'
+  },
+  {
+    label: '流量差积分',
+    path: 'flowBalanceIntegral',
+    abbr: 'DeltaFlow_int',
+    description: '流量差积分。表示流量差随时间的累计效果，用于放大持续性微弱失衡。'
+  },
+  {
+    label: '池增量',
+    path: 'pitGain',
+    abbr: 'DeltaTVOLACT',
+    description: '池增量。表示总池体积相对基线的增量变化，用于识别连续池量上涨或下降。'
+  }
 ].map(item => ({
   ...item,
   fields: metricFieldDefs
@@ -1057,17 +1071,11 @@ export default {
   min-width: 0;
 }
 
-.metric-label-head {
+.metric-title-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-}
-
-.field-label-inline,
-.editor-label-inline {
-  margin-bottom: 0;
-  flex: 1;
 }
 
 .field-abbr {
