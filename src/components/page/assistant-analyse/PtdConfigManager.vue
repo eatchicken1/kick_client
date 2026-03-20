@@ -116,25 +116,19 @@
             </div>
           </div>
 
-          <div class="remark-block">
-            <div class="remark-title">版本备注</div>
-            <div class="remark-content">{{ previewConfig.remark || '暂无' }}</div>
-          </div>
-
-          <div class="remark-block">
-            <div class="remark-title">参数说明</div>
-            <div class="remark-content">{{ readConfigValue(previewConfig.config, 'remark') || '暂无' }}</div>
-          </div>
-
-          <div class="remark-block">
-            <div class="remark-title">批准人</div>
-            <div class="remark-content">{{ readConfigValue(previewConfig.config, 'approvedBy') || '暂无' }}</div>
-          </div>
-
           <el-divider>基础参数</el-divider>
           <div class="field-grid">
             <div v-for="field in baseFields" :key="field.path" class="field-item">
-              <span class="field-label">{{ field.label }}</span>
+              <div class="field-label-row">
+                <span class="field-label">{{ field.label }}</span>
+                <el-tooltip
+                  v-if="field.description"
+                  effect="dark"
+                  placement="top"
+                  :content="field.description">
+                  <i class="el-icon-question field-help-icon"></i>
+                </el-tooltip>
+              </div>
               <span class="field-value">{{ formatValue(readConfigValue(previewConfig.config, field.path), field) }}</span>
             </div>
           </div>
@@ -164,6 +158,11 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="remark-block">
+            <div class="remark-title">版本备注</div>
+            <div class="remark-content">{{ previewConfig.remark || '暂无' }}</div>
           </div>
         </el-card>
 
@@ -240,26 +239,6 @@
               <el-form-item label="版本名称" required>
                 <el-input v-model.trim="editorDraft.versionName" maxlength="50" show-word-limit placeholder="例如：夜班校准版" />
               </el-form-item>
-              <el-form-item label="版本备注">
-                <el-input v-model.trim="editorDraft.remark" maxlength="200" show-word-limit placeholder="说明这次修改目的、适用场景或审批意见" />
-              </el-form-item>
-              <el-form-item label="批准人">
-                <el-input
-                  :value="readConfigValue(editorDraft.config, 'approvedBy')"
-                  maxlength="30"
-                  placeholder="例如：值班工程师"
-                  @input="writeValue('approvedBy', $event)" />
-              </el-form-item>
-              <el-form-item label="参数说明">
-                <el-input
-                  type="textarea"
-                  :rows="2"
-                  :value="readConfigValue(editorDraft.config, 'remark')"
-                  maxlength="300"
-                  show-word-limit
-                  placeholder="记录参数调优背景、适用工况或特别说明"
-                  @input="writeValue('remark', $event)" />
-              </el-form-item>
             </div>
 
             <div v-if="editorMode === 'clone'" class="clone-section">
@@ -285,7 +264,16 @@
             <el-divider>基础参数</el-divider>
             <div class="editor-field-grid">
               <div v-for="field in baseFields" :key="'editor-' + field.path" class="editor-field-item">
-                <label class="editor-label">{{ field.label }}</label>
+                <div class="field-label-row">
+                  <label class="editor-label">{{ field.label }}</label>
+                  <el-tooltip
+                    v-if="field.description"
+                    effect="dark"
+                    placement="top"
+                    :content="field.description">
+                    <i class="el-icon-question field-help-icon"></i>
+                  </el-tooltip>
+                </div>
                 <div class="editor-control">
                   <el-input
                     v-if="field.readonly"
@@ -335,6 +323,11 @@
                 </div>
               </div>
             </div>
+
+            <el-divider>版本备注</el-divider>
+            <el-form-item label="版本备注">
+              <el-input v-model.trim="editorDraft.remark" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="说明这次修改目的、适用场景或审批意见" />
+            </el-form-item>
           </el-form>
         </div>
 
@@ -363,16 +356,16 @@ import {
 } from '@/utils/ptdRisk';
 
 const baseFields = [
-  { label: '配置协议版本', path: 'version', readonly: true },
-  { label: '生效时间', path: 'effectiveAt', readonly: true, type: 'datetime' },
-  { label: '热身窗口', path: 'warmupWindowSec', type: 'number', unit: 's', min: 0, step: 1 },
-  { label: '稳定泵窗口', path: 'stablePumpWindowSec', type: 'number', unit: 's', min: 0, step: 1 },
-  { label: '稳定波动比例', path: 'stableVariationRatio', type: 'number', min: 0, step: 0.01 },
-  { label: '流量因子窗口', path: 'flowFactorWindowSec', type: 'number', unit: 's', min: 0, step: 1 },
-  { label: '流量因子钳制', path: 'flowFactorClampRatio', type: 'number', min: 0, step: 0.01 },
-  { label: '事件冷却期', path: 'eventCooldownSec', type: 'number', unit: 's', min: 0, step: 1 },
-  { label: '断点重置下限', path: 'gapResetFloorSec', type: 'number', unit: 's', min: 0, step: 1 },
-  { label: '断点重置倍率', path: 'gapResetMultiplier', type: 'number', min: 0, step: 0.1 }
+  { label: '配置协议版本', path: 'version', readonly: true, description: '当前统一风险配置的协议版本号，用于识别算法配置结构。' },
+  { label: '生效时间', path: 'effectiveAt', readonly: true, type: 'datetime', description: '该配置快照的生效时间标记。' },
+  { label: '热身窗口', path: 'warmupWindowSec', type: 'number', unit: 's', min: 0, step: 1, description: '分析起点前额外补取的预热时长，用于建立基线，避免窗口刚开始时阈值不稳定。' },
+  { label: '稳定泵窗口', path: 'stablePumpWindowSec', type: 'number', unit: 's', min: 0, step: 1, description: '用于判断泵速和入口流量是否进入稳定段的观察窗口。' },
+  { label: '稳定波动比例', path: 'stableVariationRatio', type: 'number', min: 0, step: 0.01, description: '稳定段内允许的最大相对波动比例，越小越严格。' },
+  { label: '流量因子窗口', path: 'flowFactorWindowSec', type: 'number', unit: 's', min: 0, step: 1, description: '计算入口/出口流量校准因子的回看窗口长度。' },
+  { label: '流量因子钳制', path: 'flowFactorClampRatio', type: 'number', min: 0, step: 0.01, description: '限制流量校准因子的偏离幅度，避免极端值把 ΔFlow 放大。' },
+  { label: '事件冷却期', path: 'eventCooldownSec', type: 'number', unit: 's', min: 0, step: 1, description: '异常刚恢复正常后继续保留为同一事件的时间，用于合并短暂抖动。' },
+  { label: '断点重置下限', path: 'gapResetFloorSec', type: 'number', unit: 's', min: 0, step: 1, description: '当采样断档超过该秒数时，会强制重置事件连续性。' },
+  { label: '断点重置倍率', path: 'gapResetMultiplier', type: 'number', min: 0, step: 0.1, description: '当前采样间隔相对近期中位间隔放大的倍数，超过后会触发断点重置。' }
 ];
 
 const metricFieldDefs = [
@@ -1037,6 +1030,18 @@ export default {
   color: #64748b;
   font-size: 12px;
   margin-bottom: 6px;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.field-label-row .field-label,
+.field-label-row .editor-label {
+  margin-bottom: 0;
 }
 
 .meta-value,

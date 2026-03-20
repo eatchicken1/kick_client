@@ -57,6 +57,8 @@
       :default-window-minutes="defaultWindowMinutes"
       :auto-follow-latest="true"
       :hide-highlight-when-normal="true"
+      :show-event-table-inline="false"
+      :show-formation-info="false"
       :loading-text="dashboardLoadingText"
       :empty-text="dashboardEmptyText"
       @status-updated="handleStatusUpdated" />
@@ -107,6 +109,8 @@ const realtimeReconnectPolicy = {
 function cloneEventFromFrame(frame) {
   return {
     eventId: frame.eventId,
+    analysisRunId: frame.analysisRunId || '',
+    recordId: frame.eventRecordId || '',
     startTime: frame.timestamp,
     startTimeMs: frame.timestampMs,
     startTimeLabel: frame.timestampLabel,
@@ -120,7 +124,23 @@ function cloneEventFromFrame(frame) {
     status: frame.status,
     isActive: Boolean(frame.eventId),
     evidence: (frame.evidence || []).slice(),
-    advice: (frame.advice || []).slice()
+    advice: (frame.advice || []).slice(),
+    snapshot: {
+      timestamp: frame.timestamp,
+      timestampMs: frame.timestampMs,
+      timestampLabel: frame.timestampLabel,
+      depth: frame.depth,
+      bitDepth: frame.bitDepth,
+      formationName: frame.formationName,
+      activityCode: frame.activityCode,
+      activityBucket: frame.activityBucket,
+      riskType: frame.riskType,
+      severity: frame.severity,
+      severityLevel: frame.severityLevel,
+      metrics: frame.metrics,
+      evidence: (frame.evidence || []).slice(),
+      advice: (frame.advice || []).slice()
+    }
   };
 }
 
@@ -295,6 +315,8 @@ export default {
           const current = nextEvents[existingIndex];
           nextEvents.splice(existingIndex, 1, {
             ...current,
+            analysisRunId: frame.analysisRunId || current.analysisRunId || this.analysisRunId,
+            recordId: frame.eventRecordId || current.recordId || '',
             endTime: frame.timestamp,
             endTimeMs: frame.timestampMs,
             endTimeLabel: frame.timestampLabel,
@@ -305,7 +327,23 @@ export default {
             status: frame.status,
             isActive: Boolean(frame.eventId),
             evidence: (frame.evidence || []).slice(),
-            advice: (frame.advice || []).slice()
+            advice: (frame.advice || []).slice(),
+            snapshot: {
+              timestamp: frame.timestamp,
+              timestampMs: frame.timestampMs,
+              timestampLabel: frame.timestampLabel,
+              depth: frame.depth,
+              bitDepth: frame.bitDepth,
+              formationName: frame.formationName,
+              activityCode: frame.activityCode,
+              activityBucket: frame.activityBucket,
+              riskType: frame.riskType,
+              severity: frame.severity,
+              severityLevel: frame.severityLevel,
+              metrics: frame.metrics,
+              evidence: (frame.evidence || []).slice(),
+              advice: (frame.advice || []).slice()
+            }
           });
         }
 
@@ -355,8 +393,16 @@ export default {
       if (frame.severityLevel === 2) {
         Notification.warning({
           title: 'L2 疑似溢流',
-          duration: 0,
-          message: `${frame.riskType}，请立即核对 PVT、流量差与井口状态。`
+          duration: 10000,
+          dangerouslyUseHTMLString: true,
+          message: [
+            `<div>井号：${this.currentWellId || '-'}</div>`,
+            `<div>风险类型：${frame.riskType || '-'}</div>`,
+            `<div>发生时间：${frame.timestampLabel || formatDateTime(frame.timestamp)}</div>`,
+            `<div>井深：${frame.depth === null || frame.depth === undefined ? '-' : `${Number(frame.depth).toFixed(2)} m`}</div>`,
+            `<div>钻头深度：${frame.bitDepth === null || frame.bitDepth === undefined ? '-' : `${Number(frame.bitDepth).toFixed(2)} m`}</div>`,
+            '<div>请立即核对 PVT、流量差与井口状态。</div>'
+          ].join('')
         });
         return;
       }
@@ -415,6 +461,7 @@ export default {
         return;
       }
 
+      frame.analysisRunId = delivery.analysisRunId || frame.analysisRunId || this.analysisRunId;
       this.frames = this.frames.concat(frame);
       this.analysisRunId = delivery.analysisRunId || this.analysisRunId;
       this.configVersion = delivery.configVersion || this.configVersion;

@@ -23,6 +23,9 @@
             <div class="summary-meta">
               <span>井号 {{ currentWellId || '-' }}</span>
               <span>工况 {{ latestFrame ? (latestFrame.activityBucket || latestFrame.activityCode || '-') : '-' }}</span>
+              <span>井深 {{ formatDepthValue(latestFrame && latestFrame.depth) }}</span>
+              <span>钻头深度 {{ formatDepthValue(latestFrame && latestFrame.bitDepth) }}</span>
+              <span v-if="showFormationInfo">层位 {{ latestFrame && latestFrame.formationName ? latestFrame.formationName : '-' }}</span>
             </div>
           </div>
         </el-col>
@@ -116,9 +119,9 @@
                 <template slot-scope="{ row }">
                   <el-button v-if="showEventLocateAction" size="mini" type="text" @click="jumpToEvent(row)">定位</el-button>
                   <el-button v-if="showEventEvidenceAction" size="mini" type="text" @click="openEventDetail(row)">详情</el-button>
-                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'ACKNOWLEDGED'" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
-                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'PROCESSING'" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
-                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'CLOSED'" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
+                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'ACKNOWLEDGED')" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
+                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'PROCESSING')" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
+                  <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'CLOSED')" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -146,9 +149,9 @@
             <template slot-scope="{ row }">
               <el-button v-if="showEventLocateAction" size="mini" type="text" @click="jumpToEvent(row)">定位</el-button>
               <el-button v-if="showEventEvidenceAction" size="mini" type="text" @click="openEventDetail(row)">详情</el-button>
-              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'ACKNOWLEDGED'" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
-              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'PROCESSING'" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
-              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'CLOSED'" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
+              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'ACKNOWLEDGED')" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
+              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'PROCESSING')" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
+              <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'CLOSED')" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -201,9 +204,9 @@
               <template slot-scope="{ row }">
                 <el-button v-if="showEventLocateAction" size="mini" type="text" @click="jumpToEvent(row)">定位</el-button>
                 <el-button v-if="showEventEvidenceAction" size="mini" type="text" @click="openEventDetail(row)">详情</el-button>
-                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'ACKNOWLEDGED'" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
-                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'PROCESSING'" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
-                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'CLOSED'" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
+                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'ACKNOWLEDGED')" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
+                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'PROCESSING')" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
+                <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'CLOSED')" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -231,9 +234,9 @@
           <template slot-scope="{ row }">
             <el-button v-if="showEventLocateAction" size="mini" type="text" @click="jumpToEvent(row)">定位</el-button>
             <el-button v-if="showEventEvidenceAction" size="mini" type="text" @click="openEventDetail(row)">详情</el-button>
-            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'ACKNOWLEDGED'" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
-            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'PROCESSING'" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
-            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusBusy(row.eventId) || row.status === 'CLOSED'" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
+            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'ACKNOWLEDGED')" @click="updateStatus(row, 'ACKNOWLEDGED')">确认</el-button>
+            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'PROCESSING')" @click="updateStatus(row, 'PROCESSING')">处理中</el-button>
+            <el-button v-if="allowStatusUpdate" size="mini" type="text" :disabled="isStatusActionDisabled(row, 'CLOSED')" @click="updateStatus(row, 'CLOSED')">关闭</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -251,9 +254,9 @@
         </div>
         <div v-if="showDetailActionRow" class="action-row dialog-actions compact-actions">
           <el-button v-if="showEventLocateAction" size="mini" type="primary" plain @click="jumpToEvent(selectedEventView)">定位区间</el-button>
-          <el-button v-if="allowStatusUpdate" size="mini" type="warning" plain :disabled="isStatusBusy(selectedEventView.eventId) || selectedEventView.status === 'ACKNOWLEDGED'" @click="updateStatus(selectedEventView, 'ACKNOWLEDGED')">确认</el-button>
-          <el-button v-if="allowStatusUpdate" size="mini" type="info" plain :disabled="isStatusBusy(selectedEventView.eventId) || selectedEventView.status === 'PROCESSING'" @click="updateStatus(selectedEventView, 'PROCESSING')">处理中</el-button>
-          <el-button v-if="allowStatusUpdate" size="mini" type="success" plain :disabled="isStatusBusy(selectedEventView.eventId) || selectedEventView.status === 'CLOSED'" @click="updateStatus(selectedEventView, 'CLOSED')">关闭</el-button>
+          <el-button v-if="allowStatusUpdate" size="mini" type="warning" plain :disabled="isStatusActionDisabled(selectedEventView, 'ACKNOWLEDGED')" @click="updateStatus(selectedEventView, 'ACKNOWLEDGED')">确认</el-button>
+          <el-button v-if="allowStatusUpdate" size="mini" type="info" plain :disabled="isStatusActionDisabled(selectedEventView, 'PROCESSING')" @click="updateStatus(selectedEventView, 'PROCESSING')">处理中</el-button>
+          <el-button v-if="allowStatusUpdate" size="mini" type="success" plain :disabled="isStatusActionDisabled(selectedEventView, 'CLOSED')" @click="updateStatus(selectedEventView, 'CLOSED')">关闭</el-button>
         </div>
         <el-skeleton v-if="detailLoading" :rows="4" animated />
         <template v-else>
@@ -262,7 +265,9 @@
             <div class="summary-meta">
               <span>时间 {{ detailSnapshot.timestampLabel }}</span>
               <span>工况 {{ detailSnapshot.activityBucket || detailSnapshot.activityCode || '-' }}</span>
-              <span>井深 {{ formatNumber(detailSnapshot.depth, 2) }}</span>
+              <span>井深 {{ formatDepthValue(detailSnapshot.depth) }}</span>
+              <span>钻头深度 {{ formatDepthValue(detailSnapshot.bitDepth) }}</span>
+              <span v-if="showFormationInfo">层位 {{ detailSnapshot.formationName || '-' }}</span>
             </div>
             <el-table :data="detailMetricRows" border size="small" class="detail-table">
               <el-table-column prop="label" label="指标" min-width="170" />
@@ -351,10 +356,10 @@
 <script>
 import * as echarts from 'echarts';
 import { getPtdEventDetailApi, updatePtdEventStatusApi } from '@/api/index';
-import { formatDateTime, formatDuration, formatNumber, getSeverityMeta, getStatusMeta, normalizeEventDetailResponse } from '@/utils/ptdRisk';
+import { canTransitionPtdStatus, formatDateTime, formatDuration, formatNumber, getSeverityMeta, getStatusMeta, normalizeEventDetailResponse } from '@/utils/ptdRisk';
 
-const CHART_HEADER_TOP = 18;
-const CHART_HEADER_HEIGHT = 18;
+const CHART_HEADER_TOP = 16;
+const CHART_HEADER_HEIGHT = 22;
 const CHART_GRID_TOP = 84;
 
 const CHART_LAYOUTS = [
@@ -401,7 +406,8 @@ export default {
     defaultWindowMinutes: { type: Number, default: 20 },
     autoFollowLatest: { type: Boolean, default: false },
     eventLocatePaddingMinutes: { type: Number, default: 2 },
-    hideHighlightWhenNormal: { type: Boolean, default: false }
+    hideHighlightWhenNormal: { type: Boolean, default: false },
+    showFormationInfo: { type: Boolean, default: true }
     },
     data() {
       return { chartLayouts: CHART_LAYOUTS, chartInstances: {}, eventOverviewVisible: false, detailVisible: false, detailLoading: false, selectedEventId: '', selectedEventDetail: null, selectedEventActionLogs: [], resizeObserver: null, zoomRange: null, manualZoomLocked: false, syncingZoom: false, expandedGroupNames: [], renderTimer: null, axisRefreshTimer: null, zoomCaptureRaf: null, pendingZoomRange: null, highlightRange: null, highlightTimer: null, locateTimer: null, locateFinishTimer: null, pendingLocateEvent: null, pendingLocateDialogCloseCount: 0, isLocating: false, locateLoadingText: '正在定位到风险曲线，请稍候...', statusLoadingMap: {} };
@@ -497,6 +503,8 @@ export default {
         activityCode: '',
         activityBucket: '',
         depth: null,
+        bitDepth: null,
+        formationName: '',
         metrics: {}
       }, snapshot || {});
     },
@@ -682,6 +690,23 @@ export default {
     directionTagType(direction) { return direction === 'HIGH' ? 'danger' : direction === 'LOW' ? 'warning' : 'info'; },
     getEventRowClassName({ row }) { return this.selectedEvent && row.eventId === this.selectedEvent.eventId ? 'event-row-active' : ''; },
     isStatusBusy(eventId) { return Boolean(eventId && this.statusLoadingMap[eventId]); },
+    formatDepthValue(value) {
+      const formatted = formatNumber(value, 2);
+      return formatted === '-' ? '-' : `${formatted} m`;
+    },
+    canUpdateStatus(eventItem, nextStatus) {
+      if (!eventItem) return false;
+      return canTransitionPtdStatus(eventItem.status, nextStatus);
+    },
+    isStatusActionDisabled(eventItem, nextStatus) {
+      if (!eventItem || !eventItem.eventId) return true;
+      return this.isStatusBusy(eventItem.eventId) || !this.canUpdateStatus(eventItem, nextStatus);
+    },
+    resolveRequestErrorMessage(error, fallback) {
+      const responseBody = error && error.response ? error.response.data : null;
+      const message = responseBody ? (responseBody.msg || responseBody.message) : '';
+      return message || fallback;
+    },
     beginLocateFeedback(message) {
       if (this.locateFinishTimer) {
         clearTimeout(this.locateFinishTimer);
@@ -815,7 +840,7 @@ export default {
       this.queueLocate(eventItem);
     },
     async updateStatus(eventItem, status) {
-      if (!eventItem || !eventItem.eventId || eventItem.status === status || this.isStatusBusy(eventItem.eventId)) return;
+      if (!eventItem || !eventItem.eventId || this.isStatusBusy(eventItem.eventId) || !this.canUpdateStatus(eventItem, status)) return;
       const previousStatus = eventItem.status;
       this.$set(this.statusLoadingMap, eventItem.eventId, true);
       this.$emit('status-updated', { eventId: eventItem.eventId, recordId: eventItem.recordId, status });
@@ -831,7 +856,7 @@ export default {
         this.$message.success(`事件状态已更新为 ${getStatusMeta(nextStatus).label}`);
       } catch (error) {
         this.$emit('status-updated', { eventId: eventItem.eventId, recordId: eventItem.recordId, status: previousStatus });
-        this.$message.error('事件状态更新失败');
+        this.$message.error(this.resolveRequestErrorMessage(error, '事件状态更新失败'));
       } finally {
         this.$delete(this.statusLoadingMap, eventItem.eventId);
       }
@@ -939,7 +964,7 @@ export default {
           left: 18,
           top: CHART_HEADER_TOP,
           padding: [2, 0, 0, 0],
-          textStyle: { fontSize: 11, lineHeight: CHART_HEADER_HEIGHT, color: '#475569', fontWeight: 500, verticalAlign: 'middle' }
+          textStyle: { fontSize: 14, lineHeight: CHART_HEADER_HEIGHT, color: '#475569', fontWeight: 600, verticalAlign: 'middle' }
         },
         legend: {
           top: CHART_HEADER_TOP,
@@ -1010,6 +1035,11 @@ export default {
       if (frame) {
         lines.push(`工况: ${frame.activityBucket || frame.activityCode || '-'}`);
         lines.push(`风险: ${frame.severity} ${frame.riskType}`);
+        lines.push(`井深: ${this.formatDepthValue(frame.depth)}`);
+        lines.push(`钻头深度: ${this.formatDepthValue(frame.bitDepth)}`);
+        if (this.showFormationInfo) {
+          lines.push(`层位: ${frame.formationName || '-'}`);
+        }
       }
       params.forEach((item) => {
         const value = Array.isArray(item.data) ? item.data[1] : null;

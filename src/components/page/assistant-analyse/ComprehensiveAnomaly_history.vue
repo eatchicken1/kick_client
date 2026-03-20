@@ -28,7 +28,6 @@
       </el-form>
 
       <div class="status-row">
-        <el-tag size="small" effect="plain">历史接口 `/api/ptd/analysis/history`</el-tag>
         <span>单次最大回放区间 {{ maxHistoryRangeHours }} 小时</span>
         <span v-if="configVersion">配置版本 {{ configVersion }}</span>
       </div>

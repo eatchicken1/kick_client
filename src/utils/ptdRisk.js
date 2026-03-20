@@ -128,6 +128,29 @@ export function getStatusMeta(status) {
     return PTD_STATUS_OPTIONS.find(item => item.value === normalized) || PTD_STATUS_OPTIONS[0];
 }
 
+export function canTransitionPtdStatus(currentStatus, nextStatus) {
+    const normalizedNext = normalizeStatus(nextStatus);
+    const rawCurrent = String(currentStatus || 'NEW').trim().toUpperCase();
+    const normalizedCurrent = rawCurrent === 'TIMEOUT' ? 'NEW' : normalizeStatus(rawCurrent);
+
+    if (normalizedCurrent === normalizedNext) {
+        return false;
+    }
+
+    switch (normalizedCurrent) {
+        case 'NEW':
+            return normalizedNext === 'ACKNOWLEDGED' || normalizedNext === 'PROCESSING' || normalizedNext === 'CLOSED';
+        case 'ACKNOWLEDGED':
+            return normalizedNext === 'PROCESSING' || normalizedNext === 'CLOSED';
+        case 'PROCESSING':
+            return normalizedNext === 'CLOSED';
+        case 'CLOSED':
+            return false;
+        default:
+            return normalizedNext === 'ACKNOWLEDGED' || normalizedNext === 'PROCESSING' || normalizedNext === 'CLOSED';
+    }
+}
+
 export function normalizeSeverityCode(value, levelHint) {
     if (typeof value === 'string' && /^L[0-3]$/i.test(value.trim())) {
         return value.trim().toUpperCase();
@@ -220,6 +243,8 @@ export function normalizeFrame(raw) {
         timestampMs: timestamp ? timestamp.getTime() : null,
         timestampLabel: formatDateTime(timestamp),
         depth: toNumber(pick(raw, ['depth', 'Depth'], null)),
+        bitDepth: toNumber(pick(raw, ['bitDepth', 'BitDepth'], null)),
+        formationName: pick(raw, ['formationName', 'FormationName'], ''),
         activityCode: pick(raw, ['activityCode', 'ActivityCode'], ''),
         activityBucket: pick(raw, ['activityBucket', 'ActivityBucket'], ''),
         sampleIntervalSec: toNumber(pick(raw, ['sampleIntervalSec', 'SampleIntervalSec'], 0), 0),
@@ -264,6 +289,8 @@ export function normalizeSnapshot(raw) {
         timestampMs: timestamp ? timestamp.getTime() : null,
         timestampLabel: formatDateTime(timestamp),
         depth: toNumber(pick(raw, ['depth', 'Depth'], null)),
+        bitDepth: toNumber(pick(raw, ['bitDepth', 'BitDepth'], null)),
+        formationName: pick(raw, ['formationName', 'FormationName'], ''),
         activityCode: pick(raw, ['activityCode', 'ActivityCode'], ''),
         activityBucket: pick(raw, ['activityBucket', 'ActivityBucket'], ''),
         riskType: pick(raw, ['riskType', 'RiskType'], '正常'),
