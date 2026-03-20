@@ -210,13 +210,7 @@ export default new Router({
                         path: 'PtdConfigManager',
                         component: () => import('../components/page/assistant-analyse/PtdConfigManager.vue'),
                         meta: { title: '检测配置管理' }
-                    },
-                    {
-                        path: 'TcnBitcnAtWarning',
-                        component: () => import('../components/page/assistant-analyse/TcnBitcnAtWarning.vue'),
-                        meta: { title: '钻时异常检测' }
                     }
-                
 
             ]
         },

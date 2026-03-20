@@ -364,6 +364,9 @@ const baseFields = [
   { label: '流量因子窗口', path: 'flowFactorWindowSec', type: 'number', unit: 's', min: 0, step: 1, description: '计算入口/出口流量校准因子的回看窗口长度。' },
   { label: '流量因子钳制', path: 'flowFactorClampRatio', type: 'number', min: 0, step: 0.01, description: '限制流量校准因子的偏离幅度，避免极端值把 ΔFlow 放大。' },
   { label: '事件冷却期', path: 'eventCooldownSec', type: 'number', unit: 's', min: 0, step: 1, description: '异常刚恢复正常后继续保留为同一事件的时间，用于合并短暂抖动。' },
+  { label: 'L1 持续时长', path: 'l1MinDurationSec', type: 'number', unit: 's', min: 0, step: 1, description: '单参数异常或前置预警升级为 L1 前要求满足的最短持续时间。' },
+  { label: 'L2 持续时长', path: 'l2MinDurationSec', type: 'number', unit: 's', min: 0, step: 1, description: '多参数协同异常升级为 L2 前要求满足的最短持续时间。' },
+  { label: 'L3 确认时长', path: 'l3MinDurationSec', type: 'number', unit: 's', min: 0, step: 1, description: 'IADC 兜底确认与持续失衡升级为 L3 前要求满足的最短持续时间。' },
   { label: '断点重置下限', path: 'gapResetFloorSec', type: 'number', unit: 's', min: 0, step: 1, description: '当采样断档超过该秒数时，会强制重置事件连续性。' },
   { label: '断点重置倍率', path: 'gapResetMultiplier', type: 'number', min: 0, step: 0.1, description: '当前采样间隔相对近期中位间隔放大的倍数，超过后会触发断点重置。' }
 ];

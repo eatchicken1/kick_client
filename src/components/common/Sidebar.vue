@@ -148,10 +148,6 @@ export default {
                             index: 'PtdConfigManager',
                             title: '检测配置管理'
                         },
-                        {
-                            index: 'TcnBitcnAtWarning',
-                            title: '钻时异常检测'
-                        }
                     ]
                 },
                 {
