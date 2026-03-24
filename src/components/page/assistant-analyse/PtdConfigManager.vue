@@ -501,6 +501,9 @@ export default {
     currentWellId() {
       return this.$store.state.jh || '';
     },
+    configWellId() {
+      return this.normalizeWellId(this.currentWellId);
+    },
     versionList() {
       return this.editorContext.versions || [];
     },
@@ -515,8 +518,7 @@ export default {
       return active.versionCode || active.versionName || '未配置';
     },
     filteredCloneableWellIds() {
-      const currentWellId = this.normalizeWellId(this.currentWellId);
-      return (this.editorContext.cloneableWellIds || []).filter(item => this.normalizeWellId(item) !== currentWellId);
+      return (this.editorContext.cloneableWellIds || []).filter(item => this.normalizeWellId(item) !== this.configWellId);
     },
     editorTitle() {
       if (this.editorMode === 'clone') {
@@ -547,12 +549,13 @@ export default {
       return String(value || '').trim().replace(/-/g, '');
     },
     resetState() {
+      const wellId = this.configWellId || this.currentWellId;
       this.previewVersionId = '';
-      this.previewConfig = buildDefaultConfigDetail(this.currentWellId);
+      this.previewConfig = buildDefaultConfigDetail(wellId);
       this.editorContext = {
-        currentWellId: this.currentWellId,
+        currentWellId: wellId,
         selectedConfigVersionId: '',
-        currentConfig: buildDefaultConfigDetail(this.currentWellId),
+        currentConfig: buildDefaultConfigDetail(wellId),
         versions: [],
         cloneableWellIds: []
       };
@@ -571,7 +574,7 @@ export default {
       };
     },
     async loadPageContext() {
-      if (!this.currentWellId) {
+      if (!this.configWellId) {
         this.resetState();
         return;
       }
@@ -582,15 +585,15 @@ export default {
 
       try {
         const [editorPayload, runtimePayload] = await Promise.all([
-          getPtdAnalysisConfigEditorApi({ wellId: this.currentWellId }),
-          getPtdRealtimeRuntimeStatusApi({ wellId: this.currentWellId })
+          getPtdAnalysisConfigEditorApi({ wellId: this.configWellId }),
+          getPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId })
         ]);
 
         const editorContext = normalizeConfigEditorResponse(editorPayload);
         const runtimeStatus = normalizeRealtimeRuntimeStatus(runtimePayload);
         this.editorContext = {
           ...editorContext,
-          currentConfig: editorContext.currentConfig || buildDefaultConfigDetail(this.currentWellId)
+          currentConfig: editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId)
         };
         this.runtimeStatus = runtimeStatus;
 
@@ -601,7 +604,7 @@ export default {
             : (this.editorContext.currentConfig.configVersionId || '');
           await this.loadPreviewConfig(previewVersionId);
         } else {
-          this.previewConfig = this.editorContext.currentConfig || buildDefaultConfigDetail(this.currentWellId);
+          this.previewConfig = this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId);
           this.previewVersionId = this.previewConfig.configVersionId || '';
         }
       } catch (error) {
@@ -613,14 +616,14 @@ export default {
       }
     },
     async loadPreviewConfig(configVersionId = '') {
-      if (!this.currentWellId) {
+      if (!this.configWellId) {
         return;
       }
 
       this.previewLoading = true;
       try {
         const payload = await getPtdAnalysisConfigApi({
-          wellId: this.currentWellId,
+          wellId: this.configWellId,
           configVersionId: configVersionId || ''
         });
         this.previewConfig = normalizeConfigDetail(unwrapData(payload));
@@ -641,7 +644,7 @@ export default {
       await this.loadPreviewConfig(version.configVersionId);
     },
     beginCreateFromCurrentView() {
-      const activeConfig = this.editorContext.currentConfig || buildDefaultConfigDetail(this.currentWellId);
+      const activeConfig = this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId);
       this.editorVisible = true;
       this.editorMode = 'fork';
       this.editorDraft = {
@@ -653,7 +656,7 @@ export default {
       };
     },
     beginBlankCreate() {
-      const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.currentWellId)).config || {};
+      const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId)).config || {};
       this.editorVisible = true;
       this.editorMode = 'blank';
       this.editorDraft = {
@@ -670,7 +673,7 @@ export default {
         return;
       }
 
-      const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.currentWellId)).config || {};
+      const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId)).config || {};
       this.editorVisible = true;
       this.editorMode = 'clone';
       this.editorDraft = {
@@ -783,7 +786,7 @@ export default {
       return version.sourceWellId;
     },
     async saveVersion() {
-      if (!this.currentWellId) {
+      if (!this.configWellId) {
         this.$message.warning('请先选择井号');
         return;
       }
@@ -806,7 +809,7 @@ export default {
       this.saving = true;
       try {
         const payload = await savePtdAnalysisConfigVersionApi({
-          wellId: this.currentWellId,
+          wellId: this.configWellId,
           baseConfigVersionId: this.editorDraft.baseConfigVersionId || '',
           cloneFromWellId: this.editorDraft.cloneFromWellId || '',
           versionName: this.editorDraft.versionName,
@@ -829,13 +832,13 @@ export default {
       }
     },
     async refreshRuntimeStatus() {
-      if (!this.currentWellId) {
+      if (!this.configWellId) {
         this.runtimeStatus = buildDefaultRuntimeStatus();
         return this.runtimeStatus;
       }
 
       try {
-        const payload = await getPtdRealtimeRuntimeStatusApi({ wellId: this.currentWellId });
+        const payload = await getPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId });
         this.runtimeStatus = normalizeRealtimeRuntimeStatus(payload);
       } catch (error) {
         this.runtimeStatus = buildDefaultRuntimeStatus();
@@ -885,7 +888,7 @@ export default {
       this.activatingVersionId = version.configVersionId;
       try {
         await activatePtdAnalysisConfigVersionApi({
-          wellId: this.currentWellId,
+          wellId: this.configWellId,
           configVersionId: version.configVersionId,
           operator: 'ui',
           restartRealtimeSessions
