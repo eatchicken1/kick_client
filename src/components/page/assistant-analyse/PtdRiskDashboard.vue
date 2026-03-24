@@ -18,7 +18,7 @@
             <div class="summary-label">{{ pageModeLabel }}</div>
             <div class="summary-value">
               <el-tag size="small" effect="dark" :type="latestSeverityMeta.tagType">{{ latestSeverityMeta.code }}</el-tag>
-              <span>{{ latestFrame ? latestFrame.riskType : '暂无风险事件' }}</span>
+              <span>{{ latestFrame ? getDisplayRiskType(latestFrame) : '暂无风险事件' }}</span>
             </div>
             <div class="summary-meta">
               <span>井号 {{ currentWellId || '-' }}</span>
@@ -43,15 +43,17 @@
         <el-col :span="8">
           <div class="summary-card" :class="{ 'summary-card-clickable': !showEventTableInline }" @click="openEventOverview">
             <div class="summary-label">事件态势</div>
-            <div class="summary-value">事件 {{ visibleEventCount }} 个</div>
+            <div class="summary-value summary-value-counts">
+              <el-tag size="small" effect="dark" :type="getSeverityMetaFor('L1', 1).tagType">L1 {{ severityCounts.L1 }}</el-tag>
+              <el-tag size="small" effect="dark" :type="getSeverityMetaFor('L2', 2).tagType">L2 {{ severityCounts.L2 }}</el-tag>
+              <el-tag size="small" effect="dark" :type="getSeverityMetaFor('L3', 3).tagType">L3 {{ severityCounts.L3 }}</el-tag>
+            </div>
             <div class="summary-meta">
-              <span>L1 {{ severityCounts.L1 }}</span>
-              <span>L2 {{ severityCounts.L2 }}</span>
-              <span>L3 {{ severityCounts.L3 }}</span>
               <span>默认视窗 {{ defaultWindowMinutes }}min</span>
             </div>
-            <div v-if="!showEventTableInline" class="summary-meta summary-entry">
-              <el-button type="text" class="summary-entry-button" @click.stop="openEventOverview">查看异常事件闭环</el-button>
+            <div class="summary-meta summary-entry summary-entry-actions">
+              <el-button v-if="!showEventTableInline" type="text" class="summary-entry-button" @click.stop="openEventOverview">查看异常事件闭环</el-button>
+              <el-button type="text" class="summary-entry-button subtle-entry-button" @click.stop="openRiskTree">查看风险树</el-button>
             </div>
           </div>
         </el-col>
@@ -63,7 +65,7 @@
             <div class="summary-label">重点事件</div>
             <div class="summary-value">
               <el-tag size="small" effect="dark" :type="highlightSeverityMeta.tagType">{{ highlightSeverityMeta.code }}</el-tag>
-              <span>{{ highlightEvent.riskType }}</span>
+              <span>{{ getDisplayRiskType(highlightEvent) }}</span>
             </div>
             <div class="summary-meta">
               <span>{{ highlightEvent.startTimeLabel }}</span>
@@ -79,9 +81,15 @@
         </div>
       </el-card>
 
-      <el-card v-for="layout in chartLayouts" :key="layout.key" shadow="never" class="chart-card chart-panel" :body-style="{ padding: '0' }">
-        <div :ref="layout.ref" class="chart-canvas" :style="{ height: `${layout.height || 420}px` }"></div>
-      </el-card>
+      <template v-for="layout in chartLayouts">
+        <div v-if="layout.groupTitle" :key="`${layout.key}-group`" class="chart-group-head">
+          <div class="chart-group-title">{{ layout.groupTitle }}</div>
+          <div class="chart-group-desc">{{ layout.groupDesc }}</div>
+        </div>
+        <el-card :key="layout.key" shadow="never" class="chart-card chart-panel" :body-style="{ padding: '0' }">
+          <div :ref="layout.ref" class="chart-canvas" :style="{ height: `${layout.height || 420}px` }"></div>
+        </el-card>
+      </template>
 
       <el-card v-if="showEventTableInline" shadow="never" class="chart-card">
         <div slot="header" class="chart-head">
@@ -134,7 +142,9 @@
               <el-tag size="small" effect="dark" :type="getSeverityMetaFor(row.severity, row.severityLevel).tagType">{{ row.severity }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="riskType" label="风险类型" min-width="200" />
+          <el-table-column label="风险类型" min-width="220">
+            <template slot-scope="{ row }">{{ getDisplayRiskType(row) }}</template>
+          </el-table-column>
           <el-table-column prop="startTimeLabel" label="开始时间" :min-width="showEventActions ? 170 : 220" />
           <el-table-column prop="endTimeLabel" label="结束时间" :min-width="showEventActions ? 170 : 220" />
           <el-table-column label="持续时长" :min-width="showEventActions ? 110 : 140" align="center">
@@ -167,7 +177,6 @@
       @closed="handleLocateDialogClosed"
       append-to-body>
       <div class="summary-meta dialog-meta">
-        <span>事件 {{ visibleEventCount }} 个</span>
         <span>L1 {{ severityCounts.L1 }}</span>
         <span>L2 {{ severityCounts.L2 }}</span>
         <span>L3 {{ severityCounts.L3 }}</span>
@@ -219,7 +228,9 @@
             <el-tag size="small" effect="dark" :type="getSeverityMetaFor(row.severity, row.severityLevel).tagType">{{ row.severity }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="riskType" label="风险类型" min-width="200" />
+        <el-table-column label="风险类型" min-width="220">
+          <template slot-scope="{ row }">{{ getDisplayRiskType(row) }}</template>
+        </el-table-column>
         <el-table-column prop="startTimeLabel" label="开始时间" :min-width="showEventActions ? 170 : 220" />
         <el-table-column prop="endTimeLabel" label="结束时间" :min-width="showEventActions ? 170 : 220" />
         <el-table-column label="持续时长" :min-width="showEventActions ? 110 : 140" align="center">
@@ -242,7 +253,39 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog :visible.sync="detailVisible" width="1080px" :title="selectedEventView ? `事件详情 - ${selectedEventView.riskType}` : '事件详情'" @closed="handleLocateDialogClosed">
+    <el-dialog
+      :visible.sync="riskTreeVisible"
+      width="880px"
+      title="风险树"
+      append-to-body>
+      <div class="risk-tree-caption">
+        这里展示的是当前 PTD 统一预警的主决策路径。页面已经改为“缩放联动、悬浮解耦”，所以看树时可以回到对应曲线逐项核对。
+      </div>
+
+      <div class="risk-flow">
+        <div v-for="(step, index) in riskDecisionFlow" :key="step.title" class="risk-flow-step">
+          <div class="risk-flow-step-title">{{ step.title }}</div>
+          <div class="risk-flow-step-desc">{{ step.desc }}</div>
+          <div v-if="index < riskDecisionFlow.length - 1" class="risk-flow-arrow">↓</div>
+        </div>
+      </div>
+
+      <div class="risk-tree-grid">
+        <div v-for="branch in riskTreeBranches" :key="branch.level" class="risk-tree-branch">
+          <div class="risk-tree-branch-head">
+            <el-tag size="small" effect="dark" :type="branch.tagType">{{ branch.level }}</el-tag>
+            <span>{{ branch.title }}</span>
+          </div>
+          <div class="risk-tree-branch-code">{{ branch.code }}</div>
+          <div class="risk-tree-branch-trigger">{{ branch.trigger }}</div>
+          <ul class="risk-tree-branch-list">
+            <li v-for="rule in branch.rules" :key="rule">{{ rule }}</li>
+          </ul>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog :visible.sync="detailVisible" width="1080px" :title="selectedEventView ? `事件详情 - ${getDisplayRiskType(selectedEventView)}` : '事件详情'" @closed="handleLocateDialogClosed">
       <template v-if="selectedEventView">
         <div class="summary-meta dialog-meta">
           <el-tag size="small" effect="dark" :type="getSeverityMetaFor(selectedEventView.severity, selectedEventView.severityLevel).tagType">{{ selectedEventView.severity }}</el-tag>
@@ -364,16 +407,87 @@ const CHART_GRID_TOP = 84;
 
 const CHART_LAYOUTS = [
   { key: 'overview', ref: 'chartOverview', title: '风险等级曲线', type: 'overview', height: 280 },
-  { key: 'standpipePress', ref: 'chartSpp', title: '立管压力 SPPA', type: 'metric', metricKey: 'standpipePress', color: '#0f766e', height: 400 },
+  { key: 'standpipePress', ref: 'chartSpp', title: '立管压力 SPPA', type: 'metric', metricKey: 'standpipePress', color: '#0f766e', height: 400, groupTitle: '循环与流量链路', groupDesc: '把立压、泵冲、入口、出口、池体积和流量差放在一段连续阅读，先看压力和循环是否失衡，再看放大证据。' },
+  { key: 'pumpFlowIn', ref: 'chartPumpFlowIn', title: '泵冲 + 入口流量', type: 'composite', height: 400, seriesDefs: [{ metricKey: 'pumpSpmTotal', name: '总泵冲 SPM', color: '#0284c7', axisName: 'spm', position: 'left' }, { metricKey: 'flowIn', name: '入口流量 MFIA', color: '#16a34a', axisName: 'L/s', position: 'right' }] },
   { key: 'outletFlow', ref: 'chartFlow', title: '出口流量 MFOA', type: 'metric', metricKey: 'outletFlow', color: '#2563eb', height: 400 },
   { key: 'poolVolume', ref: 'chartVolume', title: '总池体积 TVOLACT', type: 'metric', metricKey: 'poolVolume', color: '#7c3aed', height: 400 },
-  { key: 'hookLoad', ref: 'chartHook', title: '钩载 HKLA', type: 'metric', metricKey: 'hookLoad', color: '#ea580c', height: 400 },
+  { key: 'pitFlow', ref: 'chartPitFlow', title: '总池体积变化 + 流量差', type: 'composite', height: 400, seriesDefs: [{ metricKey: 'pitGain', name: '池增量 ΔTVOLACT', color: '#0f766e', axisName: 'm³', position: 'left' }, { metricKey: 'flowBalance', name: '流量差 ΔFlow', color: '#2563eb', axisName: 'L/s', position: 'right' }, { metricKey: 'flowBalanceIntegral', name: '流量差积分 ΔFlow_int', color: '#dc2626', axisName: 'L', position: 'right', offset: 88 }] },
+  { key: 'gasChoke', ref: 'chartGasChoke', title: '全烃 + 套压', type: 'composite', height: 400, groupTitle: '气侵与井口反馈', groupDesc: '当前面的循环链路开始偏离时，再用气测和套压确认异常是否正在向井口放大。', seriesDefs: [{ metricKey: 'gas', name: '全烃 GASA', color: '#ca8a04', axisName: '%', position: 'left' }, { metricKey: 'chokePressure', name: '套压 CHKP', color: '#7c2d12', axisName: 'MPa', position: 'right' }] },
+  { key: 'hookLoad', ref: 'chartHook', title: '钩载 HKLA', type: 'metric', metricKey: 'hookLoad', color: '#ea580c', height: 400, groupTitle: '机械与钻进干扰', groupDesc: '这组曲线主要用于区分机械扰动和真实井控异常，避免把工况变化误判成溢流。' },
   { key: 'torque', ref: 'chartTorque', title: '扭矩 TORQA', type: 'metric', metricKey: 'torque', color: '#be123c', height: 400 },
   { key: 'rop', ref: 'chartRop', title: '钻时 ROPA', type: 'metric', metricKey: 'rop', color: '#475569', height: 400 },
-  { key: 'pitFlow', ref: 'chartPitFlow', title: '总池体积变化 + 流量差', type: 'composite', height: 400, seriesDefs: [{ metricKey: 'pitGain', name: '池增量 ΔTVOLACT', color: '#0f766e', axisName: 'm³', position: 'left' }, { metricKey: 'flowBalance', name: '流量差 ΔFlow', color: '#2563eb', axisName: 'L/s', position: 'right' }, { metricKey: 'flowBalanceIntegral', name: '流量差积分 ΔFlow_int', color: '#dc2626', axisName: 'L', position: 'right', offset: 88 }] },
-  { key: 'pumpFlowIn', ref: 'chartPumpFlowIn', title: '泵冲 + 入口流量', type: 'composite', height: 400, seriesDefs: [{ metricKey: 'pumpSpmTotal', name: '总泵冲 SPM', color: '#0284c7', axisName: 'spm', position: 'left' }, { metricKey: 'flowIn', name: '入口流量 MFIA', color: '#16a34a', axisName: 'L/s', position: 'right' }] },
-  { key: 'gasChoke', ref: 'chartGasChoke', title: '全烃 + 套压', type: 'composite', height: 400, seriesDefs: [{ metricKey: 'gas', name: '全烃 GASA', color: '#ca8a04', axisName: '%', position: 'left' }, { metricKey: 'chokePressure', name: '套压 CHKP', color: '#7c2d12', axisName: 'MPa', position: 'right' }] }
 ];
+
+const RISK_DECISION_FLOW = [
+  { title: '第 1 步：门控先行', desc: '先检查 gap reset、工况静默、恒泵稳定等门控。门控没打开时，页面保持 L0，不会只因瞬时尖峰升级。' },
+  { title: '第 2 步：单参候选', desc: '出口流量、立压、池体积、机械参数、全烃、套压等任一指标持续异常，进入 L1 候选。' },
+  { title: '第 3 步：协同候选', desc: '如果出现“流量 + 压力”“流量 + 池增量”或“流量差积分 + 气测/套压”这类协同证据，才具备升级到 L2 的资格。' },
+  { title: '第 4 步：确认溢流', desc: '只有 confirmCandidate 成立，并且出现停泵仍回流或持续失衡足够久，才会被提升到 L3。' }
+];
+
+const RISK_TREE_BRANCHES = [
+  {
+    level: 'L0',
+    title: '不报警 / 保持观察',
+    tagType: 'info',
+    code: 'gate closed / duration not enough',
+    trigger: '门控未开、持续时间不足，或证据无法形成有效组合。',
+    rules: [
+      '处于 gap reset、工况切换静默期，或恒泵条件没有满足。',
+      '单参虽然有波动，但没有连续达到当前配置要求的时长。',
+      '协同关系不成立，仍判为正常或继续观察。'
+    ]
+  },
+  {
+    level: 'L1',
+    title: '先导预警',
+    tagType: 'warning',
+    code: 'singleCandidate / surfaceOperation / transitionSppDrop',
+    trigger: '单参候选、地面操作兜底，或工况切换期立压骤降，持续超过 L1MinDurationSec。',
+    rules: [
+      '出口流量、立压、池体积、钩载、扭矩、钻时中任一主证据持续异常。',
+      '只见池体积增加但缺少协同证据时，会以“疑似地面操作/加泥”先报 L1。',
+      '工况切换后仍处于恒泵段，若立压快速下挫，也会作为 L1 前置信号保留。'
+    ]
+  },
+  {
+    level: 'L2',
+    title: '协同预警',
+    tagType: 'danger',
+    code: 'multiCandidate',
+    trigger: '多参数协同候选成立，并持续超过 L2MinDurationSec。',
+    rules: [
+      '出口流量升高 + 立压下降。',
+      '出口流量升高 + 池增量持续。',
+      '流量差积分持续为正 + 全烃或套压协同抬升。'
+    ]
+  },
+  {
+    level: 'L3',
+    title: '确认预警',
+    tagType: 'danger',
+    code: 'confirmCandidate + (pumpOffBackflow or persistent imbalance)',
+    trigger: 'confirmCandidate 成立，且出现停泵仍回流，或确认态与失衡态都持续超过 L3MinDurationSec。',
+    rules: [
+      '恒泵段内，池增量和流量差积分同向持续为正，是 IADC 确认溢流主链路。',
+      '停泵后仍检测到明显回流，会直接作为强确认信号拉升到 L3。',
+      '事件段内只会升级覆盖，不会因后续较低级帧反向降级。'
+    ]
+  }
+];
+
+const RISK_TYPE_FALLBACK_MAP = {
+  flow_high: '出口流量持续异常',
+  spp_low: '立管压力持续异常',
+  pool_high: '总池体积持续异常',
+  pit_gain: '池增量持续异常',
+  gas_high: '全烃持续异常',
+  choke_high: '套压持续异常',
+  torque_low: '扭矩持续异常',
+  rop_low: '钻时持续异常',
+  hook_high: '钩载持续异常',
+  spp_transition_drop: '工况切换期立压骤降'
+};
 
 function metricSeriesState() {
   return { raw: [], baseline: [], ptd: [], upper: [], lower: [], anomalies: [] };
@@ -410,7 +524,7 @@ export default {
     showFormationInfo: { type: Boolean, default: true }
     },
     data() {
-      return { chartLayouts: CHART_LAYOUTS, chartInstances: {}, eventOverviewVisible: false, detailVisible: false, detailLoading: false, selectedEventId: '', selectedEventDetail: null, selectedEventActionLogs: [], resizeObserver: null, zoomRange: null, manualZoomLocked: false, syncingZoom: false, expandedGroupNames: [], renderTimer: null, axisRefreshTimer: null, zoomCaptureRaf: null, pendingZoomRange: null, highlightRange: null, highlightTimer: null, locateTimer: null, locateFinishTimer: null, pendingLocateEvent: null, pendingLocateDialogCloseCount: 0, isLocating: false, locateLoadingText: '正在定位到风险曲线，请稍候...', statusLoadingMap: {} };
+      return { chartLayouts: CHART_LAYOUTS, riskDecisionFlow: RISK_DECISION_FLOW, riskTreeBranches: RISK_TREE_BRANCHES, chartInstances: {}, eventOverviewVisible: false, riskTreeVisible: false, detailVisible: false, detailLoading: false, selectedEventId: '', selectedEventDetail: null, selectedEventActionLogs: [], resizeObserver: null, zoomRange: null, manualZoomLocked: false, syncingZoom: false, expandedGroupNames: [], renderTimer: null, axisRefreshTimer: null, zoomCaptureRaf: null, pendingZoomRange: null, highlightRange: null, highlightTimer: null, locateTimer: null, locateFinishTimer: null, pendingLocateEvent: null, pendingLocateDialogCloseCount: 0, isLocating: false, locateLoadingText: '正在定位到风险曲线，请稍候...', statusLoadingMap: {} };
     },
     computed: {
     hasData() { return this.frames && this.frames.length > 0; },
@@ -425,7 +539,7 @@ export default {
     groupedEventGroups() {
       const groups = {};
       this.sortedEvents.forEach((item) => {
-        const key = item.riskType || '未分类';
+        const key = this.getDisplayRiskType(item) || '未分类';
         if (!groups[key]) groups[key] = [];
         groups[key].push(item);
       });
@@ -609,6 +723,19 @@ export default {
     getSeverityMetaFor(severity, level) { return getSeverityMeta(severity, level); },
     getStatusMetaFor(status) { return getStatusMeta(status); },
     getEventRowKey(row) { return row.eventId || row.recordId || `${row.startTimeMs || 0}-${row.riskType || ''}`; },
+    getEvidenceRiskType(evidenceItems) {
+      const evidence = Array.isArray(evidenceItems) ? evidenceItems : [];
+      const primary = evidence.find(item => item && item.code && RISK_TYPE_FALLBACK_MAP[item.code]);
+      return primary ? RISK_TYPE_FALLBACK_MAP[primary.code] : '';
+    },
+    getDisplayRiskType(item) {
+      if (!item) return '-';
+      const fallbackRiskType = this.getEvidenceRiskType(item.evidence || []);
+      if (!item.riskType || item.riskType === '单参数持续异常' || (item.riskType === '总池体积持续异常' && fallbackRiskType)) {
+        return fallbackRiskType || item.riskType || '正常';
+      }
+      return item.riskType;
+    },
     ensureSelectedEvent() {
       const exists = this.selectedEventId && this.sortedEvents.some(item => item.eventId === this.selectedEventId);
       if (!exists && this.highlightEvent) this.selectedEventId = this.highlightEvent.eventId;
@@ -629,6 +756,9 @@ export default {
     openEventOverview() {
       if (this.showEventTableInline) return;
       this.eventOverviewVisible = true;
+    },
+    openRiskTree() {
+      this.riskTreeVisible = true;
     },
     buildDefaultZoomRange() {
       if (!this.hasData) return null;
@@ -722,17 +852,36 @@ export default {
         this.isLocating = false;
       }, delay);
     },
-    setTransientHighlight(eventItem) {
-      if (!eventItem) return;
-      const startValue = eventItem.startTimeMs || (this.latestFrame ? this.latestFrame.timestampMs : 0);
-      const endValue = Math.max(startValue + 1000, eventItem.endTimeMs || startValue);
-      this.highlightRange = { startValue, endValue };
+    parseTimestampMs(value) {
+      if (value instanceof Date) {
+        return value.getTime();
+      }
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : NaN;
+      }
+      if (typeof value === 'string' && value) {
+        const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+        const parsed = new Date(normalized).getTime();
+        return Number.isFinite(parsed) ? parsed : NaN;
+      }
+      return NaN;
+    },
+    setTransientHighlightRange(startValue, endValue) {
+      const normalized = this.normalizeZoomRange({ startValue, endValue });
+      if (!normalized) return;
+      this.highlightRange = normalized;
       if (this.highlightTimer) clearTimeout(this.highlightTimer);
       this.refreshHighlightAreas();
       this.highlightTimer = setTimeout(() => {
         this.highlightRange = null;
         this.refreshHighlightAreas();
       }, 2400);
+    },
+    setTransientHighlight(eventItem) {
+      if (!eventItem) return;
+      const startValue = eventItem.startTimeMs || (this.latestFrame ? this.latestFrame.timestampMs : 0);
+      const endValue = Math.max(startValue + 1000, eventItem.endTimeMs || startValue);
+      this.setTransientHighlightRange(startValue, endValue);
     },
     refreshHighlightAreas() {
       const hasCharts = Object.keys(this.chartInstances).length > 0;
@@ -813,6 +962,26 @@ export default {
       this.scrollChartsIntoView();
       this.finishLocateFeedback(520);
     },
+    performTimeLocate(targetTimeMs) {
+      if (!this.hasData || !Number.isFinite(targetTimeMs)) return false;
+      const clampedTimeMs = Math.max(this.earliestFrame.timestampMs, Math.min(this.latestFrame.timestampMs, targetTimeMs));
+      const halfWindowMs = Math.max(1, this.defaultWindowMinutes) * 60 * 1000 / 2;
+      const nextZoomRange = this.buildCenteredZoomRange(clampedTimeMs, halfWindowMs);
+      const highlightStart = Math.max(this.earliestFrame.timestampMs, clampedTimeMs - 30 * 1000);
+      const highlightEnd = Math.min(this.latestFrame.timestampMs, clampedTimeMs + 30 * 1000);
+      this.manualZoomLocked = true;
+      this.setTransientHighlightRange(highlightStart, Math.max(highlightStart + 1000, highlightEnd));
+      const zoomChanged = !this.rangesEqual(this.zoomRange, nextZoomRange);
+      this.zoomRange = nextZoomRange;
+      if (zoomChanged) {
+        this.applyZoomRange();
+      } else {
+        this.scheduleAxisRefresh(true);
+      }
+      this.scrollChartsIntoView();
+      this.finishLocateFeedback(520);
+      return true;
+    },
     handleLocateDialogClosed() {
       if (!this.pendingLocateEvent || this.pendingLocateDialogCloseCount <= 0) return;
       this.pendingLocateDialogCloseCount = Math.max(0, this.pendingLocateDialogCloseCount - 1);
@@ -838,6 +1007,24 @@ export default {
         return;
       }
       this.queueLocate(eventItem);
+    },
+    jumpToTimestamp(targetTimestamp) {
+      if (!this.hasData || this.isLocating) return false;
+      const targetMs = this.parseTimestampMs(targetTimestamp);
+      if (!Number.isFinite(targetMs)) return false;
+      if (this.locateTimer) {
+        clearTimeout(this.locateTimer);
+        this.locateTimer = null;
+      }
+      this.beginLocateFeedback('正在定位到指定时间点，请稍候...');
+      this.$nextTick(() => {
+        if (window.requestAnimationFrame) {
+          window.requestAnimationFrame(() => this.performTimeLocate(targetMs));
+          return;
+        }
+        this.performTimeLocate(targetMs);
+      });
+      return true;
     },
     async updateStatus(eventItem, status) {
       if (!eventItem || !eventItem.eventId || this.isStatusBusy(eventItem.eventId) || !this.canUpdateStatus(eventItem, status)) return;
@@ -975,7 +1162,7 @@ export default {
           textStyle: { color: '#475569', fontSize: 11, lineHeight: 11 }
         },
         grid: { left: 72, right: 84, top: CHART_GRID_TOP, bottom: 48, containLabel: false },
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, confine: true, transitionDuration: 0 },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'line', snap: false, animation: false }, confine: true, transitionDuration: 0 },
         dataZoom: [
           { type: 'inside', filterMode: 'none', throttle: 80, startValue: zoom ? zoom.startValue : undefined, endValue: zoom ? zoom.endValue : undefined },
           {
@@ -1034,7 +1221,7 @@ export default {
       const lines = [formatDateTime(axisValue)];
       if (frame) {
         lines.push(`工况: ${frame.activityBucket || frame.activityCode || '-'}`);
-        lines.push(`风险: ${frame.severity} ${frame.riskType}`);
+        lines.push(`风险: ${frame.severity} ${this.getDisplayRiskType(frame)}`);
         lines.push(`井深: ${this.formatDepthValue(frame.depth)}`);
         lines.push(`钻头深度: ${this.formatDepthValue(frame.bitDepth)}`);
         if (this.showFormationInfo) {
@@ -1050,7 +1237,7 @@ export default {
     },
     buildOverviewOption() {
       return this.buildBaseOption({
-        title: { text: '风险等级曲线' },
+        title: { text: '风险等级时间轴' },
         tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) },
         yAxis: {
           type: 'value',
@@ -1063,11 +1250,12 @@ export default {
           nameGap: 16,
           nameTextStyle: { color: '#334155', fontSize: 11, fontWeight: 500, align: 'left' },
           axisLabel: { color: '#475569', fontSize: 11, margin: 12, formatter: value => getSeverityMeta(`L${value}`).label },
-          splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } }
+          splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } },
+          splitArea: { show: true, areaStyle: { color: ['rgba(148, 163, 184, 0.08)', 'rgba(245, 158, 11, 0.08)', 'rgba(249, 115, 22, 0.08)', 'rgba(220, 38, 38, 0.08)'] } }
         },
         series: [
-          this.buildLineSeries({ name: '风险等级', step: 'end', lineStyle: { width: 2, color: '#d97706' }, itemStyle: { color: '#d97706' }, markArea: { silent: true, data: this.chartMarkAreas }, data: this.dashboardDataset.severity }),
-          this.buildScatterSeries({ name: '新事件', symbolSize: 10, itemStyle: { color: '#dc2626' }, data: this.dashboardDataset.newEvents })
+          this.buildLineSeries({ name: '风险等级', step: 'end', lineStyle: { width: 3, color: '#d97706' }, itemStyle: { color: '#d97706' }, areaStyle: { color: 'rgba(217, 119, 6, 0.18)' }, markArea: { silent: true, data: this.chartMarkAreas }, data: this.dashboardDataset.severity }),
+          this.buildScatterSeries({ name: '新事件', symbolSize: 9, itemStyle: { color: '#dc2626' }, data: this.dashboardDataset.newEvents })
         ]
       });
     },
@@ -1187,7 +1375,6 @@ export default {
       const dom = Array.isArray(target) ? target[0] : target;
       if (!dom) return null;
       const chart = echarts.init(dom, null, { renderer: 'canvas' });
-      chart.group = `ptd-risk-${this._uid}`;
       chart.on('dataZoom', params => this.captureZoom(params));
       this.chartInstances[layout.key] = chart;
       return chart;
@@ -1225,7 +1412,6 @@ export default {
         const chart = this.getOrCreateChart(layout);
         if (chart) chart.setOption(this.buildChartOption(layout), false, true);
       });
-      echarts.connect(`ptd-risk-${this._uid}`);
       this.applyZoomRange();
       this.handleResize();
     }
@@ -1248,11 +1434,16 @@ export default {
 .summary-value { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; font-size: 18px; font-weight: 600; color: #0f172a; }
 .summary-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; color: #475569; font-size: 12px; }
 .summary-entry { margin-top: 8px; }
+.summary-entry-actions { gap: 12px; }
 .summary-entry-button { padding: 0; font-size: 12px; }
+.subtle-entry-button { color: #64748b; }
 .focus-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; color: #475569; }
 .chart-head span:first-child { color: #0f172a; font-weight: 600; }
+.chart-group-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: center; padding: 6px 2px 0; color: #475569; }
+.chart-group-title { font-size: 14px; font-weight: 600; color: #0f172a; }
+.chart-group-desc { font-size: 12px; color: #64748b; }
 .chart-panel { overflow: hidden; }
 .chart-canvas { width: 100%; }
 .group-title-row, .group-meta { display: flex; align-items: center; gap: 10px; }
@@ -1260,6 +1451,18 @@ export default {
 .dialog-meta, .dialog-actions { margin-bottom: 12px; }
 .dialog-actions { justify-content: flex-start; }
 .compact-actions .el-button--mini { padding: 6px 10px; }
+.risk-tree-caption { color: #475569; line-height: 1.7; }
+.risk-flow { margin-top: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.risk-flow-step + .risk-flow-step { margin-top: 10px; }
+.risk-flow-step-title { font-size: 13px; font-weight: 600; color: #0f172a; }
+.risk-flow-step-desc { margin-top: 6px; color: #475569; line-height: 1.7; }
+.risk-flow-arrow { margin-top: 10px; color: #94a3b8; text-align: center; }
+.risk-tree-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.risk-tree-branch { padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+.risk-tree-branch-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: #0f172a; }
+.risk-tree-branch-code { margin-top: 8px; font-size: 12px; color: #64748b; }
+.risk-tree-branch-trigger { margin-top: 8px; color: #334155; line-height: 1.7; }
+.risk-tree-branch-list { margin: 10px 0 0; padding-left: 18px; color: #475569; line-height: 1.8; }
 .locating-mask { position: fixed; inset: 0; z-index: 2100; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.14); backdrop-filter: blur(2px); }
 .locating-panel { min-width: 260px; padding: 18px 22px; border-radius: 16px; background: rgba(255, 255, 255, 0.96); box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18); text-align: center; }
 .locating-panel i { font-size: 26px; color: #2563eb; }
@@ -1270,4 +1473,9 @@ export default {
 .detail-section { margin-bottom: 16px; }
 .detail-table { margin-top: 12px; }
 .event-row-active td { background: #fff7ed !important; }
+
+@media (max-width: 960px) {
+  .risk-tree-grid { grid-template-columns: 1fr; }
+  .chart-group-head { align-items: flex-start; }
+}
 </style>

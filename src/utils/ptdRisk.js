@@ -237,13 +237,15 @@ export function normalizeFrame(raw) {
         pick(raw, ['severity', 'Severity'], 'L0'),
         pick(raw, ['severityLevel', 'SeverityLevel'], 0)
     );
+    const depth = pickDepthValue(raw, ['depth', 'Depth', 'deptMeas', 'DeptMeas', 'DEPTMEAS', 'deptVert', 'DeptVert', 'DEPTVERT']);
+    const bitDepth = pickDepthValue(raw, ['bitDepth', 'BitDepth', 'deptBitm', 'DeptBitm', 'DEPTBITM', 'deptBitv', 'DeptBitv', 'DEPTBITV']);
 
     return {
         timestamp,
         timestampMs: timestamp ? timestamp.getTime() : null,
         timestampLabel: formatDateTime(timestamp),
-        depth: toNumber(pick(raw, ['depth', 'Depth'], null)),
-        bitDepth: toNumber(pick(raw, ['bitDepth', 'BitDepth'], null)),
+        depth,
+        bitDepth: bitDepth === null ? depth : bitDepth,
         formationName: pick(raw, ['formationName', 'FormationName'], ''),
         activityCode: pick(raw, ['activityCode', 'ActivityCode'], ''),
         activityBucket: pick(raw, ['activityBucket', 'ActivityBucket'], ''),
@@ -283,13 +285,15 @@ export function normalizeSnapshot(raw) {
         pick(raw, ['severity', 'Severity'], 'L0'),
         pick(raw, ['severityLevel', 'SeverityLevel'], 0)
     );
+    const depth = pickDepthValue(raw, ['depth', 'Depth', 'deptMeas', 'DeptMeas', 'DEPTMEAS', 'deptVert', 'DeptVert', 'DEPTVERT']);
+    const bitDepth = pickDepthValue(raw, ['bitDepth', 'BitDepth', 'deptBitm', 'DeptBitm', 'DEPTBITM', 'deptBitv', 'DeptBitv', 'DEPTBITV']);
 
     return {
         timestamp,
         timestampMs: timestamp ? timestamp.getTime() : null,
         timestampLabel: formatDateTime(timestamp),
-        depth: toNumber(pick(raw, ['depth', 'Depth'], null)),
-        bitDepth: toNumber(pick(raw, ['bitDepth', 'BitDepth'], null)),
+        depth,
+        bitDepth: bitDepth === null ? depth : bitDepth,
         formationName: pick(raw, ['formationName', 'FormationName'], ''),
         activityCode: pick(raw, ['activityCode', 'ActivityCode'], ''),
         activityBucket: pick(raw, ['activityBucket', 'ActivityBucket'], ''),
@@ -366,6 +370,10 @@ function normalizeMetricWindowConfig(raw) {
         madWindowSec: toNumber(pick(raw, ['madWindowSec', 'MadWindowSec'], 0), 0),
         kFactor: toNumber(pick(raw, ['kFactor', 'KFactor'], 0), 0)
     };
+}
+
+function pickDepthValue(raw, keys) {
+    return toNumber(pick(raw, keys, null), null);
 }
 
 export function normalizeUnifiedConfig(raw) {
@@ -466,6 +474,16 @@ export function normalizeConfigEditorResponse(payload) {
         currentConfig: normalizeConfigDetail(pick(body, ['currentConfig', 'CurrentConfig'], {})),
         versions: (pick(body, ['versions', 'Versions'], []) || []).map(normalizeVersionSummary),
         cloneableWellIds: (pick(body, ['cloneableWellIds', 'CloneableWellIds'], []) || []).slice()
+    };
+}
+
+export function normalizeConfigActivationResponse(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    return {
+        config: normalizeConfigDetail(pick(body, ['config', 'Config'], {})),
+        activeRealtimeSessionCount: toNumber(pick(body, ['activeRealtimeSessionCount', 'ActiveRealtimeSessionCount'], 0), 0),
+        restartedRealtimeSessionCount: toNumber(pick(body, ['restartedRealtimeSessionCount', 'RestartedRealtimeSessionCount'], 0), 0),
+        restartRealtimeSessions: Boolean(pick(body, ['restartRealtimeSessions', 'RestartRealtimeSessions'], false))
     };
 }
 

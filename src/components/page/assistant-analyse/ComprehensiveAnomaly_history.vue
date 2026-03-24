@@ -25,6 +25,20 @@
             启动历史分析
           </el-button>
         </el-form-item>
+        <el-form-item label="跳转时间">
+          <el-date-picker
+            v-model="searchForm.jumpTime"
+            type="datetime"
+            placeholder="输入要定位的时间点"
+            format="yyyy-MM-dd HH:mm:ss"
+            value-format="yyyy-MM-dd HH:mm:ss"
+            style="width: 220px;" />
+        </el-form-item>
+        <el-form-item>
+          <el-button icon="el-icon-position" :disabled="loading || !frames.length" @click="jumpToTimePoint">
+            跳到该区间
+          </el-button>
+        </el-form-item>
       </el-form>
 
       <div class="status-row">
@@ -34,6 +48,7 @@
     </el-card>
 
     <PtdRiskDashboard
+      ref="riskDashboard"
       :frames="frames"
       :events="events"
       :sampling="sampling"
@@ -50,6 +65,7 @@
       :show-event-status-column="false"
       :show-event-table-inline="false"
       :default-window-minutes="20"
+      :show-formation-info="false"
       loading-text="正在分析历史区间并生成统一风险轨迹，请稍候..."
       empty-text="请选择时间范围后执行历史分析。"
       @status-updated="handleStatusUpdated" />
@@ -80,7 +96,8 @@ export default {
       configVersion: '',
       maxHistoryRangeHours: MAX_HISTORY_RANGE_HOURS,
       searchForm: {
-        timeRange: buildDefaultTimeRange(this.$store.state.StartTime, 3)
+        timeRange: buildDefaultTimeRange(this.$store.state.StartTime, 3),
+        jumpTime: ''
       }
     };
   },
@@ -136,6 +153,43 @@ export default {
         this.$message.error('历史分析失败');
       } finally {
         this.loading = false;
+      }
+    },
+    parseTimeToMs(value) {
+      if (!value) {
+        return NaN;
+      }
+      const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+      return new Date(normalized).getTime();
+    },
+    jumpToTimePoint() {
+      if (!this.frames.length) {
+        this.$message.warning('请先执行历史分析');
+        return;
+      }
+      if (!this.searchForm.jumpTime) {
+        this.$message.warning('请输入要跳转的时间点');
+        return;
+      }
+      const targetMs = this.parseTimeToMs(this.searchForm.jumpTime);
+      if (!Number.isFinite(targetMs)) {
+        this.$message.warning('跳转时间格式无效');
+        return;
+      }
+      const firstMs = this.frames[0].timestampMs;
+      const lastMs = this.frames[this.frames.length - 1].timestampMs;
+      if (targetMs < firstMs || targetMs > lastMs) {
+        this.$message.warning('跳转时间需要落在当前已回放的数据区间内');
+        return;
+      }
+      const dashboard = this.$refs.riskDashboard;
+      if (!dashboard || typeof dashboard.jumpToTimestamp !== 'function') {
+        this.$message.error('图表组件尚未就绪');
+        return;
+      }
+      const jumped = dashboard.jumpToTimestamp(this.searchForm.jumpTime);
+      if (!jumped) {
+        this.$message.warning('当前时间点暂时无法定位，请稍后再试');
       }
     },
     handleStatusUpdated({ eventId, status }) {

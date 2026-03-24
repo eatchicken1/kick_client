@@ -9,19 +9,27 @@
         <div class="summary-head">
           <div>
             <div class="summary-title">PTD 检测配置管理</div>
-            <div class="summary-subtitle">默认展示当前已启用版本，新增版本保存后不会自动生效，需要手动启用。</div>
+            <div class="summary-subtitle">支持修改当前查看版本参数、克隆其他井已启用配置，并手动启用目标版本。</div>
           </div>
           <div class="summary-actions">
             <el-button size="small" icon="el-icon-refresh" :loading="pageLoading" @click="reloadCurrent">
               刷新
             </el-button>
             <el-button
-              v-if="hasPersistedConfig"
               size="small"
               type="primary"
-              icon="el-icon-plus"
+              icon="el-icon-edit-outline"
               @click="beginCreateFromCurrentView">
-              新增版本
+              修改当前参数
+            </el-button>
+            <el-button
+              size="small"
+              type="success"
+              plain
+              icon="el-icon-document-copy"
+              :disabled="!filteredCloneableWellIds.length"
+              @click="beginCloneCreate">
+              克隆已有配置
             </el-button>
           </div>
         </div>
@@ -197,6 +205,7 @@
               </div>
               <div class="version-actions">
                 <el-button size="mini" @click="previewVersion(version)">查看</el-button>
+                <el-button size="mini" type="text" @click="beginEditFromVersion(version)">修改</el-button>
                 <el-button
                   size="mini"
                   type="primary"
@@ -225,14 +234,14 @@
         :close-on-press-escape="false"
         @close="cancelEditor">
         <div v-loading="saving" class="editor-dialog-body">
-          <div class="card-subtitle editor-subtitle">新增版本默认只保存草稿，启用后才会影响实时监测和历史分析。</div>
+          <div class="card-subtitle editor-subtitle">{{ editorSubtitle }}</div>
 
           <el-alert
             type="info"
             :closable="false"
             show-icon
             class="editor-alert"
-            title="当前编辑只会生成新版本快照，不会覆盖历史版本，也不会自动启用。" />
+            :title="editorAlertTitle" />
 
           <el-form label-width="110px" size="small" class="editor-form">
             <div class="editor-top-grid">
@@ -333,7 +342,7 @@
 
         <span slot="footer" class="dialog-footer">
           <el-button size="small" @click="cancelEditor">取消</el-button>
-          <el-button size="small" type="primary" :loading="saving" @click="saveVersion">保存为新版本</el-button>
+          <el-button size="small" type="primary" :loading="saving" @click="saveVersion">{{ saveButtonText }}</el-button>
         </span>
       </el-dialog>
     </template>
@@ -350,6 +359,7 @@ import {
 } from '@/api/index';
 import {
   formatDateTime,
+  normalizeConfigActivationResponse,
   normalizeConfigDetail,
   normalizeConfigEditorResponse,
   normalizeRealtimeRuntimeStatus
@@ -524,10 +534,37 @@ export default {
       if (this.editorMode === 'clone') {
         return '克隆已有井配置';
       }
+      if (this.editorMode === 'edit') {
+        return '修改当前配置参数';
+      }
       if (this.editorMode === 'blank') {
         return '新建井级配置';
       }
       return '基于当前生效版本新增';
+    },
+    editorSubtitle() {
+      if (this.editorMode === 'clone') {
+        return '克隆只会读取来源井当前已启用配置，并为当前井生成一个新的版本草稿。';
+      }
+      if (this.editorMode === 'edit') {
+        return '当前正在修改所查看版本的参数。保存后会生成一个新版本快照，原版本保持不变。';
+      }
+      if (this.editorMode === 'blank') {
+        return '当前井还没有专属版本，保存后会落下一条新的井级配置版本。';
+      }
+      return '新增版本默认只保存草稿，启用后才会影响实时监测和历史分析。';
+    },
+    editorAlertTitle() {
+      if (this.editorMode === 'clone') {
+        return '克隆会生成当前井的新版本快照，不会影响来源井当前已启用配置。';
+      }
+      if (this.editorMode === 'edit') {
+        return '修改当前参数只会新增一个修订版本，不会覆盖历史版本，也不会自动启用。';
+      }
+      return '当前编辑只会生成新版本快照，不会覆盖历史版本，也不会自动启用。';
+    },
+    saveButtonText() {
+      return this.editorMode === 'edit' ? '保存为修订版本' : '保存为新版本';
     },
     cloneHintText() {
       if (!this.editorDraft.cloneFromWellId) {
@@ -643,29 +680,58 @@ export default {
       }
       await this.loadPreviewConfig(version.configVersionId);
     },
-    beginCreateFromCurrentView() {
-      const activeConfig = this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId);
-      this.editorVisible = true;
-      this.editorMode = 'fork';
-      this.editorDraft = {
+    buildEditorDraft(configDetail, overrides = {}) {
+      const detail = configDetail || buildDefaultConfigDetail(this.configWellId);
+      return {
         versionName: '',
         remark: '',
-        baseConfigVersionId: activeConfig.configVersionId || '',
+        baseConfigVersionId: detail.configVersionId || '',
         cloneFromWellId: '',
-        config: deepClone(activeConfig.config || {})
+        config: deepClone(detail.config || {}),
+        ...overrides
       };
+    },
+    async beginEditFromVersion(version) {
+      const targetVersionId = version && version.configVersionId ? version.configVersionId : '';
+      let target = version || this.previewConfig || buildDefaultConfigDetail(this.configWellId);
+
+      if (targetVersionId && !target.config) {
+        this.previewLoading = true;
+        try {
+          const payload = await getPtdAnalysisConfigApi({
+            wellId: this.configWellId,
+            configVersionId: targetVersionId
+          });
+          target = normalizeConfigDetail(unwrapData(payload));
+        } catch (error) {
+          this.$message.error('加载待修改配置失败');
+          return;
+        } finally {
+          this.previewLoading = false;
+        }
+      } else {
+        target = normalizeConfigDetail(target);
+      }
+
+      this.editorVisible = true;
+      this.editorMode = 'edit';
+      this.editorDraft = this.buildEditorDraft(target, {
+        versionName: '',
+        remark: ''
+      });
+    },
+    beginCreateFromCurrentView() {
+      this.beginEditFromVersion(this.previewConfig);
     },
     beginBlankCreate() {
       const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId)).config || {};
       this.editorVisible = true;
       this.editorMode = 'blank';
-      this.editorDraft = {
-        versionName: '',
-        remark: '',
+      this.editorDraft = this.buildEditorDraft(buildDefaultConfigDetail(this.configWellId), {
         baseConfigVersionId: '',
         cloneFromWellId: '',
         config: deepClone(seedConfig)
-      };
+      });
     },
     async beginCloneCreate() {
       if (!this.filteredCloneableWellIds.length) {
@@ -676,13 +742,11 @@ export default {
       const seedConfig = (this.editorContext.currentConfig || buildDefaultConfigDetail(this.configWellId)).config || {};
       this.editorVisible = true;
       this.editorMode = 'clone';
-      this.editorDraft = {
-        versionName: '',
-        remark: '',
+      this.editorDraft = this.buildEditorDraft(buildDefaultConfigDetail(this.configWellId), {
         baseConfigVersionId: '',
         cloneFromWellId: '',
         config: deepClone(seedConfig)
-      };
+      });
 
       if (this.filteredCloneableWellIds.length === 1) {
         this.editorDraft.cloneFromWellId = this.filteredCloneableWellIds[0];
@@ -887,19 +951,28 @@ export default {
 
       this.activatingVersionId = version.configVersionId;
       try {
-        await activatePtdAnalysisConfigVersionApi({
+        const payload = await activatePtdAnalysisConfigVersionApi({
           wellId: this.configWellId,
           configVersionId: version.configVersionId,
           operator: 'ui',
           restartRealtimeSessions
         });
+        const activationResult = normalizeConfigActivationResponse(payload);
+        const activatedConfig = activationResult.config || normalizeConfigDetail(version);
+        this.previewConfig = activatedConfig;
+        this.previewVersionId = activatedConfig.configVersionId || version.configVersionId;
+
+        const activeSessionCount = activationResult.activeRealtimeSessionCount || 0;
+        const restartedSessionCount = activationResult.restartedRealtimeSessionCount || 0;
         this.$message.success(
           restartRealtimeSessions
-            ? '版本已启用，当前实时监测会话会按新配置重启'
-            : '版本已启用，当前实时监测继续沿用旧配置运行'
+            ? `版本已启用，已通知 ${restartedSessionCount} 个实时监测会话按新配置重启`
+            : activeSessionCount > 0
+              ? `版本已启用，当前 ${activeSessionCount} 个实时监测会话继续沿用旧配置运行`
+              : '版本已启用'
         );
         await this.loadPageContext();
-        await this.loadPreviewConfig(version.configVersionId);
+        await this.loadPreviewConfig(activatedConfig.configVersionId || version.configVersionId);
       } catch (error) {
         this.$message.error('启用配置版本失败');
       } finally {
