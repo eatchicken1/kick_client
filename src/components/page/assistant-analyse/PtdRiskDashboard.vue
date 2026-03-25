@@ -59,24 +59,44 @@
         </el-col>
       </el-row>
 
-      <el-card v-if="showHighlightCard" shadow="never" class="focus-card">
+      <el-card v-if="showHighlightCard" shadow="never" class="focus-card" :body-style="{ padding: '16px 18px 14px' }">
         <div class="focus-head">
-          <div>
+          <div class="focus-main">
             <div class="summary-label">重点事件</div>
             <div class="summary-value">
               <el-tag size="small" effect="dark" :type="highlightSeverityMeta.tagType">{{ highlightSeverityMeta.code }}</el-tag>
               <span>{{ getDisplayRiskType(highlightEvent) }}</span>
+              <el-tag size="mini" effect="plain" :type="highlightRiskTypeMeta.tagType">{{ highlightRiskTypeMeta.family }}</el-tag>
             </div>
-            <div class="summary-meta">
+            <div class="summary-meta focus-meta">
               <span>{{ highlightEvent.startTimeLabel }}</span>
               <span>{{ highlightEvent.endTimeLabel }}</span>
               <span>{{ formatDuration(highlightEvent.durationSec) }}</span>
               <span>{{ getStatusMetaFor(highlightEvent.status).label }}</span>
+              <span v-if="highlightAutoCloseHint" class="focus-close-hint">{{ highlightAutoCloseHint }}</span>
             </div>
           </div>
-          <div class="action-row compact-actions">
-            <el-button v-if="showEventLocateAction" size="mini" type="primary" plain @click="jumpToEvent(highlightEvent)">定位区间</el-button>
-            <el-button v-if="showEventEvidenceAction" size="mini" plain @click="openEventDetail(highlightEvent)">查看详情</el-button>
+          <div class="action-row compact-actions focus-actions">
+            <el-button v-if="showEventLocateAction" size="mini" type="primary" plain class="focus-action-button" @click="jumpToEvent(highlightEvent)">定位</el-button>
+            <el-button v-if="showEventEvidenceAction" size="mini" plain class="focus-action-button" @click="openEventDetail(highlightEvent)">详情</el-button>
+            <el-button size="mini" plain class="focus-action-button" @click="dismissHighlightCard(highlightEvent)">关闭</el-button>
+          </div>
+        </div>
+        <div class="focus-tree">
+          <div class="focus-tree-root">
+            <div class="focus-tree-node">
+              <span class="focus-tree-label">根事件</span>
+              <div class="focus-tree-text">
+                <strong>{{ highlightRiskTypeMeta.family }}</strong>
+                <span>{{ highlightRiskTypeMeta.summary }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="focus-tree-branches">
+            <div v-for="node in highlightReasonNodes" :key="node.key" class="focus-tree-branch">
+              <span class="focus-tree-branch-label">{{ node.label }}</span>
+              <span class="focus-tree-branch-text">{{ node.text }}</span>
+            </div>
           </div>
         </div>
       </el-card>
@@ -285,7 +305,7 @@
       </div>
     </el-dialog>
 
-    <el-dialog :visible.sync="detailVisible" width="1080px" :title="selectedEventView ? `事件详情 - ${getDisplayRiskType(selectedEventView)}` : '事件详情'" @closed="handleLocateDialogClosed">
+    <el-dialog :visible.sync="detailVisible" width="1080px" :title="selectedEventView ? `事件详情 - ${getDisplayRiskType(selectedEventView)}` : '事件详情'" @opened="handleDetailDialogOpened" @closed="handleLocateDialogClosed">
       <template v-if="selectedEventView">
         <div class="summary-meta dialog-meta">
           <el-tag size="small" effect="dark" :type="getSeverityMetaFor(selectedEventView.severity, selectedEventView.severityLevel).tagType">{{ selectedEventView.severity }}</el-tag>
@@ -308,80 +328,112 @@
         <el-skeleton v-if="detailLoading" :rows="4" animated />
         <template v-else>
           <div v-if="detailSnapshot.timestampLabel !== '-'" class="detail-section">
-            <div class="summary-label">事件快照</div>
-            <div class="summary-meta">
-              <span>时间 {{ detailSnapshot.timestampLabel }}</span>
-              <span>工况 {{ getActivityBucketDisplay(detailSnapshot) }}</span>
-              <span>井深 {{ formatDepthValue(detailSnapshot.depth) }}</span>
-              <span>钻头深度 {{ formatDepthValue(detailSnapshot.bitDepth) }}</span>
-              <span v-if="showFormationInfo">层位 {{ detailSnapshot.formationName || '-' }}</span>
+            <el-collapse v-model="detailExpandedSections" class="detail-collapse">
+              <el-collapse-item name="snapshot">
+                <template slot="title">
+                  <div class="detail-collapse-title">
+                    <span>事件快照</span>
+                    <span class="detail-collapse-hint">默认折叠</span>
+                  </div>
+                </template>
+                <div class="summary-meta">
+                  <span>时间 {{ detailSnapshot.timestampLabel }}</span>
+                  <span>工况 {{ getActivityBucketDisplay(detailSnapshot) }}</span>
+                  <span>井深 {{ formatDepthValue(detailSnapshot.depth) }}</span>
+                  <span>钻头深度 {{ formatDepthValue(detailSnapshot.bitDepth) }}</span>
+                  <span v-if="showFormationInfo">层位 {{ detailSnapshot.formationName || '-' }}</span>
+                </div>
+                <el-table :data="detailMetricRows" border size="small" class="detail-table">
+                  <el-table-column prop="label" label="指标" min-width="170" />
+                  <el-table-column prop="unit" label="单位" width="80" align="center" />
+                  <el-table-column label="原值" width="110" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.originalValue, 3) }}</template>
+                  </el-table-column>
+                  <el-table-column label="基线" width="110" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.baseline, 3) }}</template>
+                  </el-table-column>
+                  <el-table-column label="PTD" width="110" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.ptdValue, 3) }}</template>
+                  </el-table-column>
+                  <el-table-column label="PRCD" width="110" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.prcdValue, 3) }}</template>
+                  </el-table-column>
+                  <el-table-column label="PRCD阈值" width="120" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.prcdUpperThreshold, 3) }}</template>
+                  </el-table-column>
+                  <el-table-column label="自适应窗(s)" width="120" align="center">
+                    <template slot-scope="{ row }">{{ formatNumber(row.adaptiveWindowSeconds, 0) }}</template>
+                  </el-table-column>
+                  <el-table-column label="方向" width="90" align="center">
+                    <template slot-scope="{ row }">
+                      <el-tag size="mini" :type="directionTagType(row.direction)">{{ directionText(row.direction) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="异常" width="90" align="center">
+                    <template slot-scope="{ row }">
+                      <el-tag size="mini" :type="row.isAnomaly ? 'danger' : 'info'">{{ row.isAnomaly ? '是' : '否' }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="PRCD异常" width="100" align="center">
+                    <template slot-scope="{ row }">
+                      <el-tag size="mini" :type="row.isPrcdAnomaly ? 'warning' : 'info'">{{ row.isPrcdAnomaly ? '是' : '否' }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="note" label="说明" min-width="220" />
+                </el-table>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-head">
+              <div class="summary-label">相关曲线</div>
+              <div class="summary-meta detail-chart-meta">
+                <span v-if="detailChartSourceLabel">{{ detailChartSourceLabel }}</span>
+                <span v-if="detailChartWindowLabel">{{ detailChartWindowLabel }}</span>
+              </div>
             </div>
-            <el-table :data="detailMetricRows" border size="small" class="detail-table">
-              <el-table-column prop="label" label="指标" min-width="170" />
-              <el-table-column prop="unit" label="单位" width="80" align="center" />
-              <el-table-column label="原值" width="110" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.originalValue, 3) }}</template>
-              </el-table-column>
-              <el-table-column label="基线" width="110" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.baseline, 3) }}</template>
-              </el-table-column>
-              <el-table-column label="PTD" width="110" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.ptdValue, 3) }}</template>
-              </el-table-column>
-              <el-table-column label="PRCD" width="110" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.prcdValue, 3) }}</template>
-              </el-table-column>
-              <el-table-column label="PRCD阈值" width="120" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.prcdUpperThreshold, 3) }}</template>
-              </el-table-column>
-              <el-table-column label="自适应窗(s)" width="120" align="center">
-                <template slot-scope="{ row }">{{ formatNumber(row.adaptiveWindowSeconds, 0) }}</template>
-              </el-table-column>
+            <el-alert v-if="detailChartError" type="warning" :closable="false" show-icon :title="detailChartError" />
+            <div v-else-if="detailChartLayouts.length && (detailChartFrames.length || detailChartLoading)" class="detail-chart-grid">
+              <el-card
+                v-for="layout in detailChartLayouts"
+                :key="`detail-${layout.key}`"
+                shadow="never"
+                class="detail-chart-card"
+                :body-style="{ padding: '0' }">
+                <div class="detail-chart-card-head">{{ layout.title }}</div>
+                <div :ref="`detailChart_${layout.key}`" class="detail-chart-canvas"></div>
+              </el-card>
+            </div>
+            <div v-else class="detail-chart-empty">当前事件暂无可展示的关联曲线。</div>
+          </div>
+
+          <div class="detail-section">
+            <div class="summary-label">触发证据</div>
+            <el-table :data="selectedEventView.evidence || []" border size="small" class="detail-table">
+              <el-table-column prop="label" label="证据项" min-width="180" />
               <el-table-column label="方向" width="90" align="center">
                 <template slot-scope="{ row }">
                   <el-tag size="mini" :type="directionTagType(row.direction)">{{ directionText(row.direction) }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="异常" width="90" align="center">
-                <template slot-scope="{ row }">
-                  <el-tag size="mini" :type="row.isAnomaly ? 'danger' : 'info'">{{ row.isAnomaly ? '是' : '否' }}</el-tag>
-                </template>
+              <el-table-column label="当前值" width="110" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.value, 3) }}</template>
               </el-table-column>
-              <el-table-column label="PRCD异常" width="100" align="center">
-                <template slot-scope="{ row }">
-                  <el-tag size="mini" :type="row.isPrcdAnomaly ? 'warning' : 'info'">{{ row.isPrcdAnomaly ? '是' : '否' }}</el-tag>
-                </template>
+              <el-table-column label="基线" width="110" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.baseline, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="阈值" width="110" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.threshold, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="倍数" width="90" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.ratio, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="窗口(s)" width="90" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.windowSec, 0) }}</template>
               </el-table-column>
               <el-table-column prop="note" label="说明" min-width="220" />
             </el-table>
-          </div>
-
-          <div class="detail-section">
-            <div class="summary-label">触发证据</div>
-            <el-table :data="selectedEventView.evidence" border size="small" class="detail-table">
-          <el-table-column prop="label" label="证据项" min-width="180" />
-          <el-table-column label="方向" width="90" align="center">
-            <template slot-scope="{ row }">
-              <el-tag size="mini" :type="directionTagType(row.direction)">{{ directionText(row.direction) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="当前值" width="110" align="center">
-            <template slot-scope="{ row }">{{ formatNumber(row.value, 3) }}</template>
-          </el-table-column>
-          <el-table-column label="基线" width="110" align="center">
-            <template slot-scope="{ row }">{{ formatNumber(row.baseline, 3) }}</template>
-          </el-table-column>
-          <el-table-column label="阈值" width="110" align="center">
-            <template slot-scope="{ row }">{{ formatNumber(row.threshold, 3) }}</template>
-          </el-table-column>
-          <el-table-column label="倍数" width="90" align="center">
-            <template slot-scope="{ row }">{{ formatNumber(row.ratio, 3) }}</template>
-          </el-table-column>
-          <el-table-column label="窗口(s)" width="90" align="center">
-            <template slot-scope="{ row }">{{ formatNumber(row.windowSec, 0) }}</template>
-          </el-table-column>
-          <el-table-column prop="note" label="说明" min-width="220" />
-        </el-table>
           </div>
 
           <div v-if="selectedEventActionLogs.length" class="detail-section">
@@ -416,8 +468,8 @@
 
 <script>
 import * as echarts from 'echarts';
-import { getUnifiedPtdEventDetailApi, updateUnifiedPtdEventStatusApi } from '@/api/index';
-import { canTransitionPtdStatus, formatDateTime, formatDuration, formatNumber, getActivityBucketLabel, getRiskTypeMeta, getSeverityMeta, getStatusMeta, normalizeEventDetailResponse } from '@/utils/ptdRisk';
+import { getUnifiedPtdEventChartApi, getUnifiedPtdEventDetailApi, updateUnifiedPtdEventStatusApi } from '@/api/index';
+import { canTransitionPtdStatus, formatDateTime, formatDuration, formatNumber, getActivityBucketLabel, getRiskTypeMeta, getSeverityMeta, getStatusMeta, normalizeEventChartResponse, normalizeEventDetailResponse } from '@/utils/ptdRisk';
 
 const CHART_HEADER_TOP = 16;
 const CHART_HEADER_HEIGHT = 22;
@@ -524,6 +576,60 @@ function valid(value) {
   return value !== null && value !== undefined && Number.isFinite(Number(value));
 }
 
+const DETAIL_CHART_PADDING_MS = 2 * 60 * 1000;
+const DETAIL_CHART_MAX_COUNT = 4;
+const FOCUS_AUTO_CLOSE_L1_MS = 60 * 1000;
+const FOCUS_AUTO_CLOSE_L2_MS = 2 * 60 * 1000;
+const EVENT_CHART_LAYOUT_MAP = CHART_LAYOUTS.reduce((acc, layout) => {
+  if (layout.key !== 'overview') {
+    acc[layout.key] = { ...layout, height: 280 };
+  }
+  return acc;
+}, {});
+
+function buildDashboardDataset(frames) {
+  const metrics = {
+    standpipePress: metricSeriesState(),
+    outletFlow: metricSeriesState(),
+    poolVolume: metricSeriesState(),
+    hookLoad: metricSeriesState(),
+    torque: metricSeriesState(),
+    rop: metricSeriesState(),
+    pitGain: metricSeriesState(),
+    flowBalance: metricSeriesState(),
+    flowBalanceIntegral: metricSeriesState(),
+    pumpSpmTotal: metricSeriesState(),
+    flowIn: metricSeriesState(),
+    gas: metricSeriesState(),
+    chokePressure: metricSeriesState()
+  };
+  const severity = [];
+  const newEvents = [];
+  const frameMap = {};
+
+  (frames || []).forEach((frame) => {
+    if (frame.timestampMs === null) return;
+    const timePoint = frame.timestampMs;
+    frameMap[timePoint] = frame;
+    severity.push([timePoint, frame.severityLevel]);
+    if (frame.isNewEvent && frame.severityLevel > 0) {
+      newEvents.push([timePoint, frame.severityLevel]);
+    }
+    Object.keys(metrics).forEach((metricKey) => {
+      const metric = frame.metrics[metricKey];
+      metrics[metricKey].raw.push([timePoint, metric.originalValue]);
+      metrics[metricKey].baseline.push([timePoint, metric.baseline]);
+      metrics[metricKey].ptd.push([timePoint, metric.ptdValue]);
+      metrics[metricKey].upper.push([timePoint, metric.upperThreshold]);
+      metrics[metricKey].lower.push([timePoint, metric.lowerThreshold]);
+      metrics[metricKey].anomalies.push(metric.isAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
+      metrics[metricKey].prcdAnomalies.push(metric.isPrcdAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
+    });
+  });
+
+  return { metrics, severity, newEvents, frameMap };
+}
+
 export default {
   name: 'PtdRiskDashboard',
   props: {
@@ -531,6 +637,7 @@ export default {
     events: { type: Array, default: () => [] },
     sampling: { type: Object, default: () => ({}) },
     configVersion: { type: String, default: '' },
+    configVersionId: { type: String, default: '' },
     loading: { type: Boolean, default: false },
     pageMode: { type: String, default: 'history' },
     currentWellId: { type: String, default: '' },
@@ -549,11 +656,55 @@ export default {
     eventLocatePaddingMinutes: { type: Number, default: 2 },
     hideHighlightWhenNormal: { type: Boolean, default: false },
     showFormationInfo: { type: Boolean, default: true }
-    },
-    data() {
-      return { chartLayouts: CHART_LAYOUTS, riskDecisionFlow: RISK_DECISION_FLOW, riskTreeBranches: RISK_TREE_BRANCHES, chartInstances: {}, eventOverviewVisible: false, riskTreeVisible: false, detailVisible: false, detailLoading: false, selectedEventId: '', selectedEventDetail: null, selectedEventActionLogs: [], resizeObserver: null, zoomRange: null, manualZoomLocked: false, syncingZoom: false, expandedGroupNames: [], renderTimer: null, axisRefreshTimer: null, zoomCaptureRaf: null, pendingZoomRange: null, highlightRange: null, highlightTimer: null, locateTimer: null, locateFinishTimer: null, pendingLocateEvent: null, pendingLocateDialogCloseCount: 0, isLocating: false, locateLoadingText: '正在定位到风险曲线，请稍候...', statusLoadingMap: {} };
-    },
-    computed: {
+  },
+  data() {
+    return {
+      chartLayouts: CHART_LAYOUTS,
+      riskDecisionFlow: RISK_DECISION_FLOW,
+      riskTreeBranches: RISK_TREE_BRANCHES,
+      chartInstances: {},
+      detailChartInstances: {},
+      eventOverviewVisible: false,
+      riskTreeVisible: false,
+      detailVisible: false,
+      detailLoading: false,
+      detailChartLoading: false,
+      detailChartError: '',
+      detailChartSource: '',
+      detailChartFrames: [],
+      detailChartRange: null,
+      detailExpandedSections: [],
+      selectedEventId: '',
+      selectedEventDetail: null,
+      selectedEventActionLogs: [],
+      resizeObserver: null,
+      zoomRange: null,
+      manualZoomLocked: false,
+      syncingZoom: false,
+      expandedGroupNames: [],
+      renderTimer: null,
+      axisRefreshTimer: null,
+      zoomCaptureRaf: null,
+      pendingZoomRange: null,
+      highlightRange: null,
+      highlightTimer: null,
+      focusEventId: '',
+      dismissedHighlightEvents: {},
+      operatedHighlightEvents: {},
+      focusAutoCloseTimer: null,
+      focusAutoCloseToken: '',
+      locateTimer: null,
+      locateFinishTimer: null,
+      pendingLocateEvent: null,
+      pendingLocateDialogCloseCount: 0,
+      isLocating: false,
+      locateLoadingText: '正在定位到风险曲线，请稍候...',
+      statusLoadingMap: {},
+      detailRequestToken: 0,
+      detailChartRequestToken: 0
+    };
+  },
+  computed: {
     hasData() { return this.frames && this.frames.length > 0; },
     pageModeLabel() { return this.pageMode === 'realtime' ? '实时统一风险判定' : '历史统一风险复盘'; },
     latestFrame() { return this.hasData ? this.frames[this.frames.length - 1] : null; },
@@ -596,10 +747,22 @@ export default {
         .sort((a, b) => b.severityLevel - a.severityLevel || b.latestStartTime - a.latestStartTime || a.title.localeCompare(b.title, 'zh-Hans-CN'));
     },
     activeEvents() { return this.sortedEvents.filter(item => item.isActive); },
+    focusCandidateEvents() {
+      return this.sortedEvents.filter(item => (item.severityLevel || 0) > 0 && !this.isHighlightDismissed(item));
+    },
+    realtimeFocusEvent() {
+      if (this.pageMode !== 'realtime') return null;
+      if (this.focusEventId) {
+        const focused = this.focusCandidateEvents.find(item => item.eventId === this.focusEventId);
+        if (focused) {
+          return focused;
+        }
+      }
+      return this.focusCandidateEvents.slice().sort((a, b) => this.compareFocusPriority(a, b))[0] || null;
+    },
     highlightEvent() {
       if (this.pageMode === 'realtime') {
-        if (this.activeEvents.length) return this.activeEvents[0];
-        return this.sortedEvents.find(item => item.severityLevel > 0) || null;
+        return this.realtimeFocusEvent;
       }
       if (this.selectedEventId) {
         const selected = this.sortedEvents.find(item => item.eventId === this.selectedEventId);
@@ -609,6 +772,19 @@ export default {
       return this.sortedEvents.find(item => item.severityLevel > 0) || null;
     },
     highlightSeverityMeta() { return this.highlightEvent ? getSeverityMeta(this.highlightEvent.severity, this.highlightEvent.severityLevel) : this.latestSeverityMeta; },
+    highlightRiskTypeMeta() {
+      return this.highlightEvent ? this.resolveRiskTypeMeta(this.highlightEvent) : { label: '正常', family: '观察', tagType: 'info', summary: '暂无可展示的风险事件。' };
+    },
+    highlightReasonNodes() {
+      return this.buildHighlightReasonNodes(this.highlightEvent);
+    },
+    highlightAutoCloseHint() {
+      if (!this.highlightEvent || this.pageMode !== 'realtime' || this.highlightEvent.isActive || this.isHighlightOperated(this.highlightEvent)) {
+        return '';
+      }
+      const delayMinutes = this.resolveFocusAutoCloseDelay(this.highlightEvent) / 60000;
+      return `${this.highlightEvent.severity} 事件结束后 ${delayMinutes} 分钟未操作将自动关闭`;
+    },
     showHighlightCard() {
       if (!this.showHighlight || !this.highlightEvent) return false;
       if (this.hideHighlightWhenNormal && this.highlightEvent.severityLevel <= 0) return false;
@@ -668,6 +844,49 @@ export default {
         .map(key => metrics[key])
         .filter(item => item && item.label);
     },
+    detailChartDataset() {
+      return buildDashboardDataset(this.detailChartFrames);
+    },
+    detailChartLayouts() {
+      return this.resolveDetailChartLayouts(this.selectedEventView);
+    },
+    detailChartVisibleRange() {
+      if (!this.detailChartFrames.length) {
+        return null;
+      }
+      const first = this.detailChartFrames[0].timestampMs;
+      const last = this.detailChartFrames[this.detailChartFrames.length - 1].timestampMs;
+      if (!this.detailChartRange) {
+        return { startValue: first, endValue: last };
+      }
+      return {
+        startValue: Math.max(first, this.detailChartRange.startValue),
+        endValue: Math.min(last, this.detailChartRange.endValue)
+      };
+    },
+    detailChartTimeSpanMs() {
+      const range = this.detailChartVisibleRange;
+      return range ? Math.max(0, range.endValue - range.startValue) : 0;
+    },
+    detailChartSourceLabel() {
+      switch (this.detailChartSource) {
+        case 'history-local':
+          return '来源: 历史页本地数据';
+        case 'realtime-local':
+          return '来源: 实时页 1h 本地数据';
+        case 'remote':
+          return '来源: 后端补拉重算';
+        default:
+          return '';
+      }
+    },
+    detailChartWindowLabel() {
+      const range = this.detailChartVisibleRange;
+      if (!range) {
+        return '';
+      }
+      return `${formatDateTime(new Date(range.startValue))} ~ ${formatDateTime(new Date(range.endValue))}`;
+    },
     datasetKey() {
       const latestEvent = this.sortedEvents[0];
       return [this.frames.length, this.latestFrame ? this.latestFrame.timestampMs : 0, this.events.length, latestEvent ? latestEvent.eventId : '', latestEvent ? latestEvent.endTimeMs : 0].join('|');
@@ -697,46 +916,43 @@ export default {
       ]]);
     },
     dashboardDataset() {
-      const metrics = { standpipePress: metricSeriesState(), outletFlow: metricSeriesState(), poolVolume: metricSeriesState(), hookLoad: metricSeriesState(), torque: metricSeriesState(), rop: metricSeriesState(), pitGain: metricSeriesState(), flowBalance: metricSeriesState(), flowBalanceIntegral: metricSeriesState(), pumpSpmTotal: metricSeriesState(), flowIn: metricSeriesState(), gas: metricSeriesState(), chokePressure: metricSeriesState() };
-      const severity = [];
-      const newEvents = [];
-      const frameMap = {};
-      (this.frames || []).forEach((frame) => {
-        if (frame.timestampMs === null) return;
-        const timePoint = frame.timestampMs;
-        frameMap[timePoint] = frame;
-        severity.push([timePoint, frame.severityLevel]);
-        if (frame.isNewEvent && frame.severityLevel > 0) newEvents.push([timePoint, frame.severityLevel]);
-        Object.keys(metrics).forEach((metricKey) => {
-          const metric = frame.metrics[metricKey];
-          metrics[metricKey].raw.push([timePoint, metric.originalValue]);
-          metrics[metricKey].baseline.push([timePoint, metric.baseline]);
-          metrics[metricKey].ptd.push([timePoint, metric.ptdValue]);
-          metrics[metricKey].upper.push([timePoint, metric.upperThreshold]);
-          metrics[metricKey].lower.push([timePoint, metric.lowerThreshold]);
-          metrics[metricKey].anomalies.push(metric.isAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
-          metrics[metricKey].prcdAnomalies.push(metric.isPrcdAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
-        });
-      });
-      return { metrics, severity, newEvents, frameMap };
+      return buildDashboardDataset(this.frames);
     }
   },
-  watch: {
+    watch: {
     datasetKey() {
+      this.ensureFocusEvent();
       this.ensureSelectedEvent();
       this.ensureZoomRange();
       this.ensureExpandedGroups();
+      this.syncFocusAutoClose();
+      this.syncDetailChartFromLocal();
       this.scheduleRender();
+    },
+    selectedEventView() {
+      if (this.detailVisible) {
+        this.scheduleDetailChartRender();
+      }
     },
     detailVisible(value) {
       if (!value) {
+        this.detailRequestToken += 1;
+        this.detailChartRequestToken += 1;
         this.detailLoading = false;
+        this.detailChartLoading = false;
+        this.detailChartError = '';
+        this.detailChartSource = '';
+        this.detailChartFrames = [];
+        this.detailChartRange = null;
+        this.detailExpandedSections = [];
         this.selectedEventDetail = null;
         this.selectedEventActionLogs = [];
+        this.disposeDetailCharts();
       }
     }
   },
   mounted() {
+    this.ensureFocusEvent();
     this.ensureSelectedEvent();
     this.ensureZoomRange(true);
     this.ensureExpandedGroups();
@@ -747,18 +963,20 @@ export default {
     window.addEventListener('resize', this.handleResize);
     this.scheduleRender();
   },
-    beforeDestroy() {
-      if (this.resizeObserver) this.resizeObserver.disconnect();
-      window.removeEventListener('resize', this.handleResize);
-      if (this.renderTimer) clearTimeout(this.renderTimer);
-      if (this.axisRefreshTimer) clearTimeout(this.axisRefreshTimer);
-      if (this.zoomCaptureRaf && window.cancelAnimationFrame) window.cancelAnimationFrame(this.zoomCaptureRaf);
-      if (this.highlightTimer) clearTimeout(this.highlightTimer);
-      if (this.locateTimer) clearTimeout(this.locateTimer);
-      if (this.locateFinishTimer) clearTimeout(this.locateFinishTimer);
-      this.disposeCharts();
-    },
-    methods: {
+  beforeDestroy() {
+    if (this.resizeObserver) this.resizeObserver.disconnect();
+    window.removeEventListener('resize', this.handleResize);
+    if (this.renderTimer) clearTimeout(this.renderTimer);
+    if (this.axisRefreshTimer) clearTimeout(this.axisRefreshTimer);
+    if (this.zoomCaptureRaf && window.cancelAnimationFrame) window.cancelAnimationFrame(this.zoomCaptureRaf);
+    if (this.highlightTimer) clearTimeout(this.highlightTimer);
+    if (this.focusAutoCloseTimer) clearTimeout(this.focusAutoCloseTimer);
+    if (this.locateTimer) clearTimeout(this.locateTimer);
+    if (this.locateFinishTimer) clearTimeout(this.locateFinishTimer);
+    this.disposeDetailCharts();
+    this.disposeCharts();
+  },
+  methods: {
     formatNumber,
     formatDuration,
     getSeverityMetaFor(severity, level) { return getSeverityMeta(severity, level); },
@@ -776,6 +994,348 @@ export default {
     },
     getDisplayRiskType(item) {
       return this.resolveRiskTypeMeta(item).label;
+    },
+    isHighlightDismissed(eventItem) {
+      return Boolean(eventItem && eventItem.eventId && this.dismissedHighlightEvents[eventItem.eventId]);
+    },
+    isHighlightOperated(eventItem) {
+      if (!eventItem || !eventItem.eventId) {
+        return false;
+      }
+      const status = String(eventItem.status || 'NEW').toUpperCase();
+      if (status !== 'NEW' && status !== 'TIMEOUT') {
+        return true;
+      }
+      return Boolean(this.operatedHighlightEvents[eventItem.eventId]);
+    },
+    markHighlightOperated(eventItem) {
+      if (!eventItem || !eventItem.eventId) {
+        return;
+      }
+      this.$set(this.operatedHighlightEvents, eventItem.eventId, true);
+      this.clearFocusAutoCloseTimer();
+    },
+    compareFocusPriority(first, second) {
+      return (second.severityLevel || 0) - (first.severityLevel || 0)
+        || Number(Boolean(second.isActive)) - Number(Boolean(first.isActive))
+        || (second.endTimeMs || second.startTimeMs || 0) - (first.endTimeMs || first.startTimeMs || 0)
+        || (second.startTimeMs || 0) - (first.startTimeMs || 0);
+    },
+    shouldReplaceFocusEvent(currentEvent, nextEvent) {
+      if (!currentEvent) return true;
+      if (!nextEvent) return false;
+      const currentSeverity = currentEvent.severityLevel || 0;
+      const nextSeverity = nextEvent.severityLevel || 0;
+      if (nextSeverity > currentSeverity) return true;
+      if (nextSeverity < currentSeverity) return false;
+      if (currentEvent.isActive && !nextEvent.isActive) return false;
+      if (!currentEvent.isActive && nextEvent.isActive) return true;
+      if (String(currentEvent.status || '').toUpperCase() === 'CLOSED'
+        && String(nextEvent.status || '').toUpperCase() !== 'CLOSED') {
+        return true;
+      }
+      return (nextEvent.endTimeMs || nextEvent.startTimeMs || 0) > (currentEvent.endTimeMs || currentEvent.startTimeMs || 0);
+    },
+    ensureFocusEvent() {
+      if (this.pageMode !== 'realtime') {
+        this.focusEventId = '';
+        return;
+      }
+
+      const candidates = this.focusCandidateEvents.slice().sort((a, b) => this.compareFocusPriority(a, b));
+      const current = this.focusEventId
+        ? this.sortedEvents.find(item => item.eventId === this.focusEventId)
+        : null;
+      const next = candidates[0] || null;
+
+      if (!current) {
+        this.focusEventId = next ? next.eventId : '';
+        return;
+      }
+
+      if (!next) {
+        this.focusEventId = '';
+        return;
+      }
+
+      if (next.eventId === current.eventId) {
+        return;
+      }
+
+      if (this.shouldReplaceFocusEvent(current, next)) {
+        this.focusEventId = next.eventId;
+      }
+    },
+    dismissHighlightCard(eventItem) {
+      if (!eventItem || !eventItem.eventId) {
+        return;
+      }
+      this.$set(this.dismissedHighlightEvents, eventItem.eventId, true);
+      if (this.focusEventId === eventItem.eventId) {
+        this.focusEventId = '';
+      }
+      this.clearFocusAutoCloseTimer();
+      this.ensureFocusEvent();
+      this.ensureSelectedEvent();
+    },
+    clearFocusAutoCloseTimer() {
+      if (this.focusAutoCloseTimer) {
+        clearTimeout(this.focusAutoCloseTimer);
+        this.focusAutoCloseTimer = null;
+      }
+      this.focusAutoCloseToken = '';
+    },
+    resolveFocusAutoCloseDelay(eventItem) {
+      return (eventItem && (eventItem.severityLevel || 0) <= 1)
+        ? FOCUS_AUTO_CLOSE_L1_MS
+        : FOCUS_AUTO_CLOSE_L2_MS;
+    },
+    syncFocusAutoClose() {
+      if (this.pageMode !== 'realtime' || !this.highlightEvent || this.highlightEvent.isActive || this.isHighlightOperated(this.highlightEvent)) {
+        this.clearFocusAutoCloseTimer();
+        return;
+      }
+
+      const token = [
+        this.highlightEvent.eventId,
+        this.highlightEvent.endTimeMs || 0,
+        this.highlightEvent.status || 'NEW',
+        this.highlightEvent.isActive ? '1' : '0'
+      ].join('|');
+      if (this.focusAutoCloseToken === token && this.focusAutoCloseTimer) {
+        return;
+      }
+
+      const targetEventId = this.highlightEvent.eventId;
+      const delay = this.resolveFocusAutoCloseDelay(this.highlightEvent);
+      this.clearFocusAutoCloseTimer();
+      this.focusAutoCloseToken = token;
+      this.focusAutoCloseTimer = setTimeout(() => {
+        this.focusAutoCloseTimer = null;
+        this.focusAutoCloseToken = '';
+        const current = this.highlightEvent;
+        if (current && current.eventId === targetEventId && !current.isActive && !this.isHighlightOperated(current)) {
+          this.dismissHighlightCard(current);
+        }
+      }, delay);
+    },
+    formatEvidenceSummary(item) {
+      if (!item) {
+        return '暂无主证据';
+      }
+      const direction = this.directionText(item.direction);
+      const ratio = valid(item.ratio) ? `，倍数 ${this.formatAxisValue(item.ratio)}` : '';
+      return `${item.label || item.code || '证据项'} ${direction}${ratio}`;
+    },
+    buildHighlightReasonNodes(eventItem) {
+      if (!eventItem) {
+        return [];
+      }
+      const riskMeta = this.resolveRiskTypeMeta(eventItem);
+      const nodes = [];
+      nodes.push({
+        key: 'activity',
+        label: '工况入口',
+        text: `${this.getActivityBucketDisplay(eventItem.snapshot || eventItem)}，开始于 ${eventItem.startTimeLabel}`
+      });
+      (eventItem.evidence || []).slice(0, 2).forEach((item, index) => {
+        nodes.push({
+          key: `evidence-${index}`,
+          label: `主证据 ${index + 1}`,
+          text: this.formatEvidenceSummary(item)
+        });
+      });
+      nodes.push({
+        key: 'decision',
+        label: '判定输出',
+        text: `${eventItem.severity} ${riskMeta.family}，${riskMeta.summary}`
+      });
+      return nodes;
+    },
+    pushDetailChartLayoutKey(layoutKeys, layoutKey) {
+      if (!layoutKey || !EVENT_CHART_LAYOUT_MAP[layoutKey] || layoutKeys.includes(layoutKey)) {
+        return;
+      }
+      layoutKeys.push(layoutKey);
+    },
+    resolveDetailChartLayouts(eventItem) {
+      if (!eventItem) {
+        return [];
+      }
+
+      const layoutKeys = [];
+      const riskType = this.getDisplayRiskType(eventItem);
+      const evidenceCodes = new Set((eventItem.evidence || []).map(item => item.code));
+
+      if (riskType.includes('气侵') || evidenceCodes.has('gas_high') || evidenceCodes.has('gas_accel') || evidenceCodes.has('choke_high')) {
+        this.pushDetailChartLayoutKey(layoutKeys, 'gasChoke');
+      }
+      if (riskType.includes('井漏') || riskType.includes('池增量') || evidenceCodes.has('pool_high') || evidenceCodes.has('pool_low') || evidenceCodes.has('pit_gain') || evidenceCodes.has('loss_circulation_pattern')) {
+        this.pushDetailChartLayoutKey(layoutKeys, 'pitFlow');
+        this.pushDetailChartLayoutKey(layoutKeys, 'poolVolume');
+      }
+      if (riskType.includes('刺漏') || riskType.includes('水眼掉落') || evidenceCodes.has('spp_low') || evidenceCodes.has('spp_decel') || evidenceCodes.has('spp_transition_drop')) {
+        this.pushDetailChartLayoutKey(layoutKeys, 'standpipePress');
+      }
+      if (riskType.includes('流量') || riskType.includes('回流') || evidenceCodes.has('flow_high') || evidenceCodes.has('flow_low') || evidenceCodes.has('flow_accel') || evidenceCodes.has('blowoff_precursor')) {
+        this.pushDetailChartLayoutKey(layoutKeys, 'outletFlow');
+      }
+      if (riskType.includes('螺杆') || riskType.includes('机械') || evidenceCodes.has('torque_low') || evidenceCodes.has('hook_high') || evidenceCodes.has('rop_low') || evidenceCodes.has('motor_stall')) {
+        this.pushDetailChartLayoutKey(layoutKeys, 'torque');
+        this.pushDetailChartLayoutKey(layoutKeys, 'hookLoad');
+        this.pushDetailChartLayoutKey(layoutKeys, 'rop');
+      }
+
+      this.pushDetailChartLayoutKey(layoutKeys, 'outletFlow');
+      this.pushDetailChartLayoutKey(layoutKeys, 'standpipePress');
+      this.pushDetailChartLayoutKey(layoutKeys, 'pitFlow');
+
+      return layoutKeys
+        .slice(0, DETAIL_CHART_MAX_COUNT)
+        .map(key => EVENT_CHART_LAYOUT_MAP[key]);
+    },
+    buildEventTimeRange(eventItem) {
+      if (!eventItem) {
+        return null;
+      }
+      const startValue = eventItem.startTimeMs || (this.latestFrame ? this.latestFrame.timestampMs : 0);
+      const endValue = Math.max(startValue + 1000, eventItem.endTimeMs || startValue);
+      return { startValue, endValue };
+    },
+    buildEventChartWindow(eventItem) {
+      const eventRange = this.buildEventTimeRange(eventItem);
+      if (!eventRange) {
+        return null;
+      }
+      const { startValue, endValue } = eventRange;
+      const durationMs = Math.max(1000, endValue - startValue);
+      const paddingMs = Math.max(DETAIL_CHART_PADDING_MS, durationMs * 0.35);
+      return {
+        startValue: Math.max(0, startValue - paddingMs),
+        endValue: endValue + paddingMs
+      };
+    },
+    canUseLocalEventChartSource(eventItem, range = this.buildEventChartWindow(eventItem)) {
+      if (!range || !this.hasData) {
+        return false;
+      }
+      if (this.pageMode === 'history') {
+        return true;
+      }
+      const eventRange = this.buildEventTimeRange(eventItem);
+      if (!eventRange) {
+        return false;
+      }
+      return this.earliestFrame.timestampMs <= eventRange.startValue && this.latestFrame.timestampMs >= eventRange.endValue;
+    },
+    resolveLocalEventChartRange(eventItem, range = this.buildEventChartWindow(eventItem)) {
+      if (!range || !this.hasData) {
+        return null;
+      }
+      if (this.pageMode === 'history') {
+        return range;
+      }
+      const eventRange = this.buildEventTimeRange(eventItem);
+      if (!eventRange) {
+        return null;
+      }
+      if (this.earliestFrame.timestampMs > eventRange.startValue || this.latestFrame.timestampMs < eventRange.endValue) {
+        return null;
+      }
+      return {
+        startValue: Math.max(this.earliestFrame.timestampMs, range.startValue),
+        endValue: Math.min(this.latestFrame.timestampMs, range.endValue)
+      };
+    },
+    extractFramesForRange(range, framesSource = this.frames) {
+      if (!range) {
+        return [];
+      }
+      return (framesSource || []).filter(item => item.timestampMs !== null && item.timestampMs >= range.startValue && item.timestampMs <= range.endValue);
+    },
+    syncDetailChartFromLocal() {
+      if (!this.detailVisible || !this.selectedEventView || !this.detailChartRange) {
+        return;
+      }
+      if (!this.canUseLocalEventChartSource(this.selectedEventView, this.detailChartRange)) {
+        return;
+      }
+      const localRange = this.resolveLocalEventChartRange(this.selectedEventView, this.detailChartRange);
+      const frames = this.extractFramesForRange(localRange || this.detailChartRange);
+      if (!frames.length) {
+        return;
+      }
+      this.detailChartRange = localRange || this.detailChartRange;
+      this.detailChartFrames = frames;
+      this.detailChartSource = this.pageMode === 'history' ? 'history-local' : 'realtime-local';
+      this.scheduleDetailChartRender();
+    },
+    buildEventChartRequestParams(eventItem, range) {
+      if (!range) {
+        return null;
+      }
+      return {
+        wellId: this.currentWellId,
+        startTime: formatDateTime(new Date(range.startValue)).replace(' ', 'T'),
+        endTime: formatDateTime(new Date(range.endValue)).replace(' ', 'T'),
+        configVersionId: (eventItem && eventItem.configVersionId) || this.configVersionId || ''
+      };
+    },
+    async loadEventRelatedCharts(eventItem) {
+      const requestToken = this.detailChartRequestToken + 1;
+      this.detailChartRequestToken = requestToken;
+      this.detailChartError = '';
+      this.detailChartSource = '';
+      this.detailChartFrames = [];
+      const requestRange = this.buildEventChartWindow(eventItem);
+      this.detailChartRange = requestRange;
+      this.disposeDetailCharts();
+
+      if (!eventItem || !requestRange || !this.detailChartLayouts.length) {
+        return;
+      }
+
+      if (this.canUseLocalEventChartSource(eventItem, requestRange)) {
+        const localRange = this.resolveLocalEventChartRange(eventItem, requestRange);
+        this.detailChartRange = localRange || requestRange;
+        this.detailChartFrames = this.extractFramesForRange(this.detailChartRange);
+        this.detailChartSource = this.pageMode === 'history' ? 'history-local' : 'realtime-local';
+        this.scheduleDetailChartRender();
+        return;
+      }
+
+      const params = this.buildEventChartRequestParams(eventItem, requestRange);
+      if (!params || !params.wellId) {
+        this.detailChartError = '当前井号为空，无法补拉相关曲线';
+        return;
+      }
+
+      this.detailChartLoading = true;
+      this.scheduleDetailChartRender();
+      try {
+        const response = await getUnifiedPtdEventChartApi(params);
+        if (requestToken !== this.detailChartRequestToken) {
+          return;
+        }
+        const normalized = normalizeEventChartResponse(response && response.data ? response.data : response);
+        this.detailChartFrames = normalized.frames;
+        this.detailChartSource = 'remote';
+        if (!this.detailChartFrames.length) {
+          this.detailChartError = '当前事件在补拉时间窗内没有可展示的曲线数据';
+          return;
+        }
+        this.scheduleDetailChartRender();
+      } catch (error) {
+        if (requestToken !== this.detailChartRequestToken) {
+          return;
+        }
+        this.detailChartError = this.resolveRequestErrorMessage(error, '相关曲线加载失败');
+      } finally {
+        if (requestToken === this.detailChartRequestToken) {
+          this.detailChartLoading = false;
+          this.scheduleDetailChartRender();
+        }
+      }
     },
     ensureSelectedEvent() {
       const exists = this.selectedEventId && this.sortedEvents.some(item => item.eventId === this.selectedEventId);
@@ -939,24 +1499,41 @@ export default {
     },
     async openEventDetail(eventItem) {
       if (!eventItem) return;
+      const requestToken = this.detailRequestToken + 1;
+      this.detailRequestToken = requestToken;
       this.selectedEventId = eventItem.eventId;
       this.selectedEventDetail = null;
       this.selectedEventActionLogs = [];
+      this.detailExpandedSections = [];
       this.detailVisible = true;
+      this.markHighlightOperated(eventItem);
+      this.detailChartLoading = false;
+      this.loadEventRelatedCharts(eventItem);
       if (!eventItem.recordId) return;
       this.detailLoading = true;
       try {
         const response = await getUnifiedPtdEventDetailApi({ recordId: eventItem.recordId });
+        if (requestToken !== this.detailRequestToken) {
+          return;
+        }
         const detail = normalizeEventDetailResponse(response && response.data ? response.data : response);
         this.selectedEventDetail = detail.event;
         this.selectedEventActionLogs = detail.actionLogs;
       } catch (error) {
+        if (requestToken !== this.detailRequestToken) {
+          return;
+        }
         this.selectedEventDetail = null;
         this.selectedEventActionLogs = [];
         this.$message.error('事件详情加载失败');
       } finally {
-        this.detailLoading = false;
+        if (requestToken === this.detailRequestToken) {
+          this.detailLoading = false;
+        }
       }
+    },
+    handleDetailDialogOpened() {
+      this.scheduleDetailChartRender();
     },
     rangesEqual(firstRange, secondRange) {
       if (!firstRange && !secondRange) return true;
@@ -1033,6 +1610,7 @@ export default {
     },
     jumpToEvent(eventItem) {
       if (!eventItem || !this.hasData || this.isLocating) return;
+      this.markHighlightOperated(eventItem);
       if (this.locateTimer) {
         clearTimeout(this.locateTimer);
         this.locateTimer = null;
@@ -1070,6 +1648,7 @@ export default {
     async updateStatus(eventItem, status) {
       if (!eventItem || !eventItem.eventId || this.isStatusBusy(eventItem.eventId) || !this.canUpdateStatus(eventItem, status)) return;
       const previousStatus = eventItem.status;
+      this.markHighlightOperated(eventItem);
       this.$set(this.statusLoadingMap, eventItem.eventId, true);
       this.$emit('status-updated', { eventId: eventItem.eventId, recordId: eventItem.recordId, status });
       try {
@@ -1101,9 +1680,52 @@ export default {
         });
       }, this.pageMode === 'realtime' ? 120 : 16);
     },
+    scheduleDetailChartRender() {
+      this.$nextTick(() => {
+        if (!this.detailVisible) {
+          this.disposeDetailCharts();
+          return;
+        }
+        if (!this.detailChartLayouts.length) {
+          this.disposeDetailCharts();
+          return;
+        }
+        if (this.detailChartLoading) {
+          this.syncDetailChartLoadingState();
+          return;
+        }
+        if (!this.detailChartFrames.length) {
+          this.disposeDetailCharts();
+          return;
+        }
+        this.renderDetailCharts();
+      });
+    },
+    syncDetailChartLoadingState() {
+      if (!this.detailVisible || !this.detailChartLayouts.length) {
+        return;
+      }
+      this.detailChartLayouts.forEach((layout) => {
+        const chart = this.getOrCreateDetailChart(layout);
+        if (!chart) return;
+        if (this.detailChartLoading) {
+          chart.showLoading('default', {
+            text: '正在加载相关曲线...',
+            color: '#2563eb',
+            textColor: '#475569',
+            maskColor: 'rgba(248, 250, 252, 0.82)'
+          });
+        } else {
+          chart.hideLoading();
+        }
+      });
+    },
     handleResize() {
       Object.keys(this.chartInstances).forEach((key) => {
         if (this.chartInstances[key]) this.chartInstances[key].resize();
+      });
+      Object.keys(this.detailChartInstances).forEach((key) => {
+        if (this.detailChartInstances[key]) this.detailChartInstances[key].resize();
       });
     },
     disposeCharts() {
@@ -1112,14 +1734,20 @@ export default {
       });
       this.chartInstances = {};
     },
-    formatAxisTime(value, compact = false) {
+    disposeDetailCharts() {
+      Object.keys(this.detailChartInstances).forEach((key) => {
+        if (this.detailChartInstances[key]) this.detailChartInstances[key].dispose();
+      });
+      this.detailChartInstances = {};
+    },
+    formatAxisTime(value, compact = false, timeSpanMs = this.timeSpanMs) {
       const date = new Date(value);
       const pad = input => String(input).padStart(2, '0');
       const md = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
       const hm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
       const hms = `${hm}:${pad(date.getSeconds())}`;
-      if (compact) return this.timeSpanMs <= 2 * 60 * 60 * 1000 ? hms : `${md} ${hm}`;
-      return this.timeSpanMs <= 2 * 60 * 60 * 1000 ? hms : `${md}\n${hm}`;
+      if (compact) return timeSpanMs <= 2 * 60 * 60 * 1000 ? hms : `${md} ${hm}`;
+      return timeSpanMs <= 2 * 60 * 60 * 1000 ? hms : `${md}\n${hm}`;
     },
     formatAxisValue(value) {
       if (!valid(value)) return '';
@@ -1161,8 +1789,8 @@ export default {
       const pad = Math.max((max - min) * 0.08, 0.001);
       return { min: min - pad, max: max + pad };
     },
-    buildValueAxis(name, color, seriesList, position = 'left', offset = 0, showSplitLine = true) {
-      const extent = this.axisExtent(seriesList);
+    buildValueAxis(name, color, seriesList, position = 'left', offset = 0, showSplitLine = true, range = undefined) {
+      const extent = this.axisExtent(seriesList, range);
       const isRight = position === 'right';
       return {
         type: 'value',
@@ -1181,8 +1809,11 @@ export default {
         max: extent.max
       };
     },
-    buildBaseOption(extra = {}) {
-      const zoom = this.resolveVisibleAxisRange();
+    buildBaseOption(extra = {}, options = {}) {
+      const range = options.range === undefined ? this.resolveVisibleAxisRange() : options.range;
+      const timeSpanMs = options.timeSpanMs === undefined ? this.timeSpanMs : options.timeSpanMs;
+      const enableZoom = options.enableZoom !== false;
+      const lockXAxisRange = options.lockXAxisRange === true || !enableZoom;
       const baseOption = {
         animation: false,
         animationThreshold: 1000,
@@ -1204,8 +1835,8 @@ export default {
         },
         grid: { left: 72, right: 84, top: CHART_GRID_TOP, bottom: 48, containLabel: false },
         tooltip: { trigger: 'axis', axisPointer: { type: 'line', snap: false, animation: false }, confine: true, transitionDuration: 0 },
-        dataZoom: [
-          { type: 'inside', filterMode: 'none', throttle: 80, startValue: zoom ? zoom.startValue : undefined, endValue: zoom ? zoom.endValue : undefined },
+        dataZoom: enableZoom ? [
+          { type: 'inside', filterMode: 'none', throttle: 80, startValue: range ? range.startValue : undefined, endValue: range ? range.endValue : undefined },
           {
             type: 'slider',
             filterMode: 'none',
@@ -1213,17 +1844,19 @@ export default {
             throttle: 80,
             bottom: 5,
             height: 15,
-            startValue: zoom ? zoom.startValue : undefined,
-            endValue: zoom ? zoom.endValue : undefined,
-            labelFormatter: value => this.formatAxisTime(value, true)
+            startValue: range ? range.startValue : undefined,
+            endValue: range ? range.endValue : undefined,
+            labelFormatter: value => this.formatAxisTime(value, true, timeSpanMs)
           }
-        ],
+        ] : [],
         xAxis: {
           type: 'time',
-            boundaryGap: false,
-            axisLabel: { color: '#475569', fontSize: 11, margin: 10, hideOverlap: true, formatter: value => this.formatAxisTime(value) },
-            axisLine: { lineStyle: { color: '#cbd5e1' } }
-          }
+          boundaryGap: false,
+          min: lockXAxisRange && range ? range.startValue : undefined,
+          max: lockXAxisRange && range ? range.endValue : undefined,
+          axisLabel: { color: '#475569', fontSize: 11, margin: 10, hideOverlap: true, formatter: value => this.formatAxisTime(value, false, timeSpanMs) },
+          axisLine: { lineStyle: { color: '#cbd5e1' } }
+        }
       };
       return {
         ...baseOption,
@@ -1255,10 +1888,10 @@ export default {
         progressiveThreshold: 1000
       }, extra);
     },
-    tooltipFormatter(params) {
+    tooltipFormatter(params, dataset = this.dashboardDataset) {
       if (!params || !params.length) return '';
       const axisValue = params[0].axisValue;
-      const frame = this.dashboardDataset.frameMap[axisValue];
+      const frame = dataset.frameMap[axisValue];
       const lines = [formatDateTime(axisValue)];
       if (frame) {
         lines.push(`工况: ${this.getActivityBucketDisplay(frame)}`);
@@ -1276,10 +1909,12 @@ export default {
       });
       return lines.join('<br/>');
     },
-    buildOverviewOption() {
+    buildOverviewOption(options = {}) {
+      const dataset = options.dataset || this.dashboardDataset;
+      const markAreas = options.markAreas === undefined ? this.chartMarkAreas : options.markAreas;
       return this.buildBaseOption({
         title: { text: '风险等级时间轴' },
-        tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) },
+        tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params, dataset) },
         yAxis: {
           type: 'value',
           min: 0,
@@ -1295,29 +1930,92 @@ export default {
           splitArea: { show: true, areaStyle: { color: ['rgba(148, 163, 184, 0.08)', 'rgba(245, 158, 11, 0.08)', 'rgba(249, 115, 22, 0.08)', 'rgba(220, 38, 38, 0.08)'] } }
         },
         series: [
-          this.buildLineSeries({ name: '风险等级', step: 'end', lineStyle: { width: 3, color: '#d97706' }, itemStyle: { color: '#d97706' }, areaStyle: { color: 'rgba(217, 119, 6, 0.18)' }, markArea: { silent: true, data: this.chartMarkAreas }, data: this.dashboardDataset.severity }),
-          this.buildScatterSeries({ name: '新事件', symbolSize: 9, itemStyle: { color: '#dc2626' }, data: this.dashboardDataset.newEvents })
+          this.buildLineSeries({ name: '风险等级', step: 'end', lineStyle: { width: 3, color: '#d97706' }, itemStyle: { color: '#d97706' }, areaStyle: { color: 'rgba(217, 119, 6, 0.18)' }, markArea: { silent: true, data: markAreas }, data: dataset.severity }),
+          this.buildScatterSeries({ name: '新事件', symbolSize: 9, itemStyle: { color: '#dc2626' }, data: dataset.newEvents })
         ]
-      });
+      }, options);
     },
-    metricUnit(metricKey) {
-      const metric = this.latestFrame && this.latestFrame.metrics ? this.latestFrame.metrics[metricKey] : null;
+    metricUnit(metricKey, frameSource = this.latestFrame) {
+      const metric = frameSource && frameSource.metrics ? frameSource.metrics[metricKey] : null;
       return metric && metric.unit ? metric.unit : '';
     },
-    buildMetricOption(layout) {
-      const series = this.dashboardDataset.metrics[layout.metricKey];
-      const unit = this.metricUnit(layout.metricKey);
-      return this.buildBaseOption({ title: { text: layout.title }, tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) }, yAxis: [this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies, series.prcdAnomalies], 'left', 0, true), this.buildValueAxis('PTD / 阈值', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false)], series: [this.buildLineSeries({ name: '原值', yAxisIndex: 0, lineStyle: { width: 2, color: layout.color }, itemStyle: { color: layout.color }, markArea: { silent: true, data: this.chartMarkAreas }, data: series.raw }), this.buildLineSeries({ name: '基线', yAxisIndex: 0, lineStyle: { width: 1, type: 'dashed', color: '#64748b' }, itemStyle: { color: '#64748b' }, data: series.baseline }), this.buildLineSeries({ name: 'PTD', yAxisIndex: 1, lineStyle: { width: 1.5, color: '#9333ea' }, itemStyle: { color: '#9333ea' }, data: series.ptd }), this.buildLineSeries({ name: '上阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#dc2626' }, itemStyle: { color: '#dc2626' }, data: series.upper }), this.buildLineSeries({ name: '下阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#2563eb' }, itemStyle: { color: '#2563eb' }, data: series.lower }), this.buildScatterSeries({ name: '异常点', yAxisIndex: 0, symbolSize: 7, itemStyle: { color: '#dc2626' }, data: series.anomalies }), this.buildScatterSeries({ name: 'PRCD异常', yAxisIndex: 0, symbolSize: 8, symbol: 'diamond', itemStyle: { color: '#f59e0b' }, data: series.prcdAnomalies })] });
+    buildMetricOption(layout, options = {}) {
+      const dataset = options.dataset || this.dashboardDataset;
+      const markAreas = options.markAreas === undefined ? this.chartMarkAreas : options.markAreas;
+      const range = options.range === undefined ? this.resolveVisibleAxisRange() : options.range;
+      const latestFrame = options.latestFrame === undefined ? this.latestFrame : options.latestFrame;
+      const series = dataset.metrics[layout.metricKey];
+      const unit = this.metricUnit(layout.metricKey, latestFrame);
+      return this.buildBaseOption({
+        title: { text: layout.title },
+        tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params, dataset) },
+        yAxis: [
+          this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies, series.prcdAnomalies], 'left', 0, true, range),
+          this.buildValueAxis('PTD / 阈值', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false, range)
+        ],
+        series: [
+          this.buildLineSeries({ name: '原值', yAxisIndex: 0, lineStyle: { width: 2, color: layout.color }, itemStyle: { color: layout.color }, markArea: { silent: true, data: markAreas }, data: series.raw }),
+          this.buildLineSeries({ name: '基线', yAxisIndex: 0, lineStyle: { width: 1, type: 'dashed', color: '#64748b' }, itemStyle: { color: '#64748b' }, data: series.baseline }),
+          this.buildLineSeries({ name: 'PTD', yAxisIndex: 1, lineStyle: { width: 1.5, color: '#9333ea' }, itemStyle: { color: '#9333ea' }, data: series.ptd }),
+          this.buildLineSeries({ name: '上阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#dc2626' }, itemStyle: { color: '#dc2626' }, data: series.upper }),
+          this.buildLineSeries({ name: '下阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#2563eb' }, itemStyle: { color: '#2563eb' }, data: series.lower }),
+          this.buildScatterSeries({ name: '异常点', yAxisIndex: 0, symbolSize: 7, itemStyle: { color: '#dc2626' }, data: series.anomalies }),
+          this.buildScatterSeries({ name: 'PRCD异常', yAxisIndex: 0, symbolSize: 8, symbol: 'diamond', itemStyle: { color: '#f59e0b' }, data: series.prcdAnomalies })
+        ]
+      }, options);
     },
-    buildCompositeOption(layout) {
-      const yAxis = layout.seriesDefs.map(item => this.buildValueAxis(item.axisName || item.name, item.color, [this.dashboardDataset.metrics[item.metricKey].raw], item.position || 'left', item.offset || 0, item.position !== 'right' || !item.offset));
-      const series = layout.seriesDefs.map((item, index) => this.buildLineSeries({ name: item.name, yAxisIndex: index, lineStyle: { width: 2, color: item.color }, itemStyle: { color: item.color }, markArea: index === 0 ? { silent: true, data: this.chartMarkAreas } : undefined, data: this.dashboardDataset.metrics[item.metricKey].raw }));
-      return this.buildBaseOption({ title: { text: layout.title }, grid: { left: 72, right: layout.seriesDefs.length >= 3 ? 214 : 88, top: CHART_GRID_TOP, bottom: 48 }, tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) }, yAxis, series });
+    buildCompositeOption(layout, options = {}) {
+      const dataset = options.dataset || this.dashboardDataset;
+      const markAreas = options.markAreas === undefined ? this.chartMarkAreas : options.markAreas;
+      const range = options.range === undefined ? this.resolveVisibleAxisRange() : options.range;
+      const yAxis = layout.seriesDefs.map(item => this.buildValueAxis(item.axisName || item.name, item.color, [dataset.metrics[item.metricKey].raw], item.position || 'left', item.offset || 0, item.position !== 'right' || !item.offset, range));
+      const series = layout.seriesDefs.map((item, index) => this.buildLineSeries({ name: item.name, yAxisIndex: index, lineStyle: { width: 2, color: item.color }, itemStyle: { color: item.color }, markArea: index === 0 ? { silent: true, data: markAreas } : undefined, data: dataset.metrics[item.metricKey].raw }));
+      return this.buildBaseOption({ title: { text: layout.title }, grid: { left: 72, right: layout.seriesDefs.length >= 3 ? 214 : 88, top: CHART_GRID_TOP, bottom: 48 }, tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params, dataset) }, yAxis, series }, options);
     },
-    buildChartOption(layout) {
-      if (layout.type === 'overview') return this.buildOverviewOption();
-      if (layout.type === 'metric') return this.buildMetricOption(layout);
-      return this.buildCompositeOption(layout);
+    buildChartOption(layout, options = {}) {
+      if (layout.type === 'overview') return this.buildOverviewOption(options);
+      if (layout.type === 'metric') return this.buildMetricOption(layout, options);
+      return this.buildCompositeOption(layout, options);
+    },
+    buildDetailChartMarkAreas() {
+      if (!this.selectedEventView) {
+        return [];
+      }
+      return [[
+        {
+          xAxis: this.selectedEventView.startTimeMs,
+          itemStyle: { color: 'rgba(250, 204, 21, 0.28)' }
+        },
+        {
+          xAxis: Math.max((this.selectedEventView.startTimeMs || 0) + 1000, this.selectedEventView.endTimeMs || this.selectedEventView.startTimeMs || 0)
+        }
+      ]];
+    },
+    buildDetailChartOption(layout) {
+      const latestFrame = this.detailChartFrames.length ? this.detailChartFrames[this.detailChartFrames.length - 1] : null;
+      const option = this.buildChartOption(layout, {
+        dataset: this.detailChartDataset,
+        latestFrame,
+        markAreas: this.buildDetailChartMarkAreas(),
+        range: this.detailChartVisibleRange,
+        timeSpanMs: this.detailChartTimeSpanMs,
+        enableZoom: false
+      });
+      return {
+        ...option,
+        title: {
+          ...(option.title || {}),
+          text: ''
+        },
+        legend: {
+          ...(option.legend || {}),
+          show: false
+        },
+        grid: {
+          ...(option.grid || {}),
+          top: 62
+        }
+      };
     },
     buildZoomPatch() {
       const zoom = this.resolveVisibleAxisRange();
@@ -1420,6 +2118,15 @@ export default {
       this.chartInstances[layout.key] = chart;
       return chart;
     },
+    getOrCreateDetailChart(layout) {
+      if (this.detailChartInstances[layout.key]) return this.detailChartInstances[layout.key];
+      const target = this.$refs[`detailChart_${layout.key}`];
+      const dom = Array.isArray(target) ? target[0] : target;
+      if (!dom) return null;
+      const chart = echarts.init(dom, null, { renderer: 'canvas' });
+      this.detailChartInstances[layout.key] = chart;
+      return chart;
+    },
     applyZoomRange() {
       if (!this.zoomRange) return;
       this.syncingZoom = true;
@@ -1455,6 +2162,15 @@ export default {
       });
       this.applyZoomRange();
       this.handleResize();
+    },
+    renderDetailCharts() {
+      this.detailChartLayouts.forEach((layout) => {
+        const chart = this.getOrCreateDetailChart(layout);
+        if (!chart) return;
+        chart.hideLoading();
+        chart.setOption(this.buildDetailChartOption(layout), false, true);
+      });
+      this.handleResize();
     }
   }
 };
@@ -1478,7 +2194,25 @@ export default {
 .summary-entry-actions { gap: 12px; }
 .summary-entry-button { padding: 0; font-size: 12px; }
 .subtle-entry-button { color: #64748b; }
+.focus-card { padding: 16px 18px 14px; border: 1px solid #dbeafe; background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); }
 .focus-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.focus-main { flex: 1 1 520px; min-width: 0; }
+.focus-meta { align-items: center; }
+.focus-close-hint { color: #b45309; }
+.focus-actions { align-items: flex-start; }
+.focus-action-button { padding: 4px 10px !important; }
+.focus-tree { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #cbd5e1; }
+.focus-tree-root { position: relative; padding-left: 0; }
+.focus-tree-node { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: #eff6ff; border: 1px solid #dbeafe; }
+.focus-tree-label { flex: 0 0 54px; font-size: 12px; color: #1d4ed8; font-weight: 600; }
+.focus-tree-text { display: flex; flex-direction: column; gap: 4px; color: #334155; line-height: 1.6; }
+.focus-tree-text strong { color: #0f172a; }
+.focus-tree-branches { position: relative; margin-top: 12px; padding-left: 20px; }
+.focus-tree-branches::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 8px; width: 1px; background: #cbd5e1; }
+.focus-tree-branch { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 0 0 12px 12px; }
+.focus-tree-branch::before { content: ''; position: absolute; left: -1px; top: 11px; width: 12px; height: 1px; background: #cbd5e1; }
+.focus-tree-branch-label { flex: 0 0 54px; font-size: 12px; color: #64748b; font-weight: 600; }
+.focus-tree-branch-text { flex: 1; color: #334155; line-height: 1.6; }
 .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; color: #475569; }
 .chart-head span:first-child { color: #0f172a; font-weight: 600; }
@@ -1493,6 +2227,16 @@ export default {
 .dialog-actions { justify-content: flex-start; }
 .detail-risk-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -2px 0 12px; padding: 10px 12px; border-radius: 10px; background: #f8fafc; color: #334155; line-height: 1.7; }
 .compact-actions .el-button--mini { padding: 6px 10px; }
+.detail-section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; }
+.detail-chart-meta { margin-top: 0; }
+.detail-collapse { border-top: none; border-bottom: none; }
+.detail-collapse-title { display: flex; gap: 10px; align-items: center; }
+.detail-collapse-hint { color: #94a3b8; font-size: 12px; }
+.detail-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.detail-chart-card { border: 1px solid #e2e8f0; }
+.detail-chart-card-head { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600; }
+.detail-chart-canvas { width: 100%; height: 280px; }
+.detail-chart-empty { margin-top: 12px; padding: 18px 16px; border: 1px dashed #cbd5e1; border-radius: 10px; color: #64748b; background: #f8fafc; }
 .risk-tree-caption { color: #475569; line-height: 1.7; }
 .risk-flow { margin-top: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .risk-flow-step + .risk-flow-step { margin-top: 10px; }
@@ -1519,5 +2263,8 @@ export default {
 @media (max-width: 960px) {
   .risk-tree-grid { grid-template-columns: 1fr; }
   .chart-group-head { align-items: flex-start; }
+  .detail-chart-grid { grid-template-columns: 1fr; }
+  .focus-tree-node, .focus-tree-branch { flex-direction: column; gap: 6px; }
+  .focus-tree-label, .focus-tree-branch-label { flex-basis: auto; }
 }
 </style>

@@ -52,6 +52,7 @@
       :events="displayEvents"
       :sampling="sampling"
       :config-version="configVersion"
+      :config-version-id="selectedConfigVersionId"
       :loading="loading"
       page-mode="realtime"
       :current-well-id="currentWellId"

@@ -55,6 +55,7 @@
       :events="events"
       :sampling="sampling"
       :config-version="configVersion"
+      :config-version-id="configVersionId"
       :loading="loading"
       page-mode="history"
       :current-well-id="currentWellId"
@@ -83,6 +84,7 @@ import {
 } from '@/utils/ptdRisk';
 
 const MAX_HISTORY_RANGE_HOURS = 6;
+const HISTORY_REQUEST_TIMEOUT_MINUTES = 5;
 
 export default {
   name: 'ComprehensiveAnomalyHistory',
@@ -95,6 +97,7 @@ export default {
       frames: [],
       events: [],
       sampling: {},
+      configVersionId: '',
       configVersion: '',
       maxHistoryRangeHours: MAX_HISTORY_RANGE_HOURS,
       searchForm: {
@@ -109,6 +112,21 @@ export default {
     }
   },
   methods: {
+    resolveHistoryRequestErrorMessage(error) {
+      const responseBody = error && error.response ? error.response.data : null;
+      const serverMessage = responseBody ? (responseBody.msg || responseBody.message || '') : '';
+      if (serverMessage) {
+        return `历史复盘失败: ${serverMessage}`;
+      }
+
+      const errorCode = error && error.code ? String(error.code) : '';
+      const rawMessage = error && error.message ? String(error.message) : '';
+      if (errorCode === 'ECONNABORTED' || /timeout/i.test(rawMessage)) {
+        return `历史复盘超时：服务端在 ${HISTORY_REQUEST_TIMEOUT_MINUTES} 分钟内未完成分析，请缩小时间范围后重试。`;
+      }
+
+      return rawMessage ? `历史复盘失败: ${rawMessage}` : '历史复盘失败';
+    },
     async fetchData() {
       if (!this.currentWellId) {
         this.$message.warning('请先选择井号');
@@ -144,6 +162,7 @@ export default {
         this.frames = normalized.frames;
         this.events = normalized.events;
         this.sampling = normalized.sampling;
+        this.configVersionId = normalized.configVersionId;
         this.configVersion = normalized.configVersion;
 
         if (!this.frames.length) {
@@ -152,7 +171,7 @@ export default {
           this.$message.success(`历史复盘完成，共返回 ${this.frames.length} 个采样点`);
         }
       } catch (error) {
-        this.$message.error('历史复盘失败');
+        this.$message.error(this.resolveHistoryRequestErrorMessage(error));
       } finally {
         this.loading = false;
       }

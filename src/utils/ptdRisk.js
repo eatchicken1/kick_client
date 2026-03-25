@@ -836,6 +836,22 @@ export function normalizeEventDetailResponse(payload) {
     };
 }
 
+export function normalizeEventChartResponse(payload) {
+    const body = pick(payload, ['data', 'Data'], payload) || {};
+    const frames = (pick(body, ['frames', 'Frames'], []) || [])
+        .map(normalizeFrame)
+        .filter(item => item.timestampMs !== null);
+
+    return {
+        sampling: normalizeSampling(pick(body, ['sampling', 'Sampling'], {})),
+        frames,
+        configVersionId: pick(body, ['configVersionId', 'ConfigVersionId'], ''),
+        configVersion: normalizePtdProtocolVersionText(pick(body, ['configVersion', 'ConfigVersion'], ''), ''),
+        startTime: toDate(pick(body, ['startTime', 'StartTime'], null)),
+        endTime: toDate(pick(body, ['endTime', 'EndTime'], null))
+    };
+}
+
 export function computeSamplingFromFrames(frames) {
     const values = (frames || [])
         .map(item => toNumber(item.sampleIntervalSec, null))

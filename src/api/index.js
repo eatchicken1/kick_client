@@ -4,6 +4,7 @@ const URL = "http://localhost:17600/api/";
 // 若综合异常检测 PTD 接口部署在其它端口，可改为例如 "http://localhost:18300/api/"
 export const MONITOR_API_BASE = URL;
 export const getMonitorHubUrl = () => MONITOR_API_BASE.replace(/\/api\/?$/, '') + '/api/hub/monitor';
+const PTD_HISTORY_TIMEOUT_MS = 5 * 60 * 1000;
 //  const URL = "http://39.96.65.89:7780/api/";
 
 const getAddress = (s) => {
@@ -587,7 +588,7 @@ export const getUnifiedPtdHistoryApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/history",
         method: 'get',
-        timeout: 60000,
+        timeout: PTD_HISTORY_TIMEOUT_MS,
         params: params,
     });
 }
@@ -649,6 +650,15 @@ export const updateUnifiedPtdEventStatusApi = (data) => {
 export const getUnifiedPtdEventDetailApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/event-detail",
+        method: 'get',
+        timeout: 60000,
+        params,
+    });
+}
+
+export const getUnifiedPtdEventChartApi = (params) => {
+    return request({
+        url: MONITOR_API_BASE + "ptd/analysis/event-chart",
         method: 'get',
         timeout: 60000,
         params,
