@@ -583,7 +583,7 @@ export const wellboremudloss2 = (data) => {
 }
 
 // 综合异常检测 / 溢流预警统一分析
-export const getPtdAnalysisHistoryApi = (params) => {
+export const getUnifiedPtdHistoryApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/history",
         method: 'get',
@@ -592,9 +592,7 @@ export const getPtdAnalysisHistoryApi = (params) => {
     });
 }
 
-export const getPtdEarlyWarningApi = getPtdAnalysisHistoryApi;
-
-export const getPtdAnalysisConfigApi = (params) => {
+export const getUnifiedPtdConfigApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/config",
         method: 'get',
@@ -603,7 +601,7 @@ export const getPtdAnalysisConfigApi = (params) => {
     });
 }
 
-export const getPtdAnalysisConfigEditorApi = (params) => {
+export const getUnifiedPtdConfigEditorApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/config/editor",
         method: 'get',
@@ -612,7 +610,7 @@ export const getPtdAnalysisConfigEditorApi = (params) => {
     });
 }
 
-export const getPtdRealtimeRuntimeStatusApi = (params) => {
+export const getUnifiedPtdRealtimeRuntimeStatusApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/runtime-status",
         method: 'get',
@@ -621,7 +619,7 @@ export const getPtdRealtimeRuntimeStatusApi = (params) => {
     });
 }
 
-export const savePtdAnalysisConfigVersionApi = (data) => {
+export const createUnifiedPtdConfigVersionApi = (data) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/config/version",
         method: 'post',
@@ -630,7 +628,7 @@ export const savePtdAnalysisConfigVersionApi = (data) => {
     });
 }
 
-export const activatePtdAnalysisConfigVersionApi = (data) => {
+export const activateUnifiedPtdConfigVersionApi = (data) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/config/activate",
         method: 'post',
@@ -639,7 +637,7 @@ export const activatePtdAnalysisConfigVersionApi = (data) => {
     });
 }
 
-export const updatePtdEventStatusApi = (data) => {
+export const updateUnifiedPtdEventStatusApi = (data) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/event-status",
         method: 'post',
@@ -648,7 +646,7 @@ export const updatePtdEventStatusApi = (data) => {
     });
 }
 
-export const getPtdEventDetailApi = (params) => {
+export const getUnifiedPtdEventDetailApi = (params) => {
     return request({
         url: MONITOR_API_BASE + "ptd/analysis/event-detail",
         method: 'get',

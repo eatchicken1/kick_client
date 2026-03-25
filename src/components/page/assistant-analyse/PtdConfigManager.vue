@@ -8,8 +8,8 @@
       <el-card class="summary-card" shadow="hover" v-loading="pageLoading">
         <div class="summary-head">
           <div>
-            <div class="summary-title">PTD 检测配置管理</div>
-            <div class="summary-subtitle">支持修改当前查看版本参数、克隆其他井已启用配置，并手动启用目标版本。</div>
+            <div class="summary-title">PTD v4.1 检测配置管理</div>
+            <div class="summary-subtitle">当前页面按在线因果链路展示参数，支持修改当前查看版本、克隆其他井已启用配置，并手动启用目标版本。</div>
           </div>
           <div class="summary-actions">
             <el-button size="small" icon="el-icon-refresh" :loading="pageLoading" @click="reloadCurrent">
@@ -144,6 +144,33 @@
           <el-divider>指标窗口参数</el-divider>
           <div class="metric-grid">
             <div v-for="group in metricGroups" :key="group.path" class="metric-card">
+              <div class="metric-title-row">
+                <div class="metric-title">
+                  {{ group.label }}
+                  <span v-if="group.abbr" class="field-abbr">{{ group.abbr }}</span>
+                </div>
+                <el-tooltip
+                  v-if="group.description"
+                  effect="dark"
+                  placement="top"
+                  :content="group.description">
+                  <i class="el-icon-question field-help-icon"></i>
+                </el-tooltip>
+              </div>
+              <div class="metric-values">
+                <div v-for="field in group.fields" :key="group.path + field.prop" class="metric-value-item">
+                  <span class="field-label">{{ field.label }}</span>
+                  <span class="field-value">
+                    {{ formatValue(readConfigValue(previewConfig.config, group.path + '.' + field.prop), field) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <el-divider>V4.1 在线策略参数</el-divider>
+          <div class="metric-grid">
+            <div v-for="group in strategyGroups" :key="group.path" class="metric-card">
               <div class="metric-title-row">
                 <div class="metric-title">
                   {{ group.label }}
@@ -333,6 +360,49 @@
               </div>
             </div>
 
+            <el-divider>V4.1 在线策略参数</el-divider>
+            <div class="metric-grid">
+              <div v-for="group in strategyGroups" :key="'editor-' + group.path" class="metric-card">
+                <div class="metric-title-row">
+                  <div class="metric-title">
+                    {{ group.label }}
+                    <span v-if="group.abbr" class="field-abbr">{{ group.abbr }}</span>
+                  </div>
+                  <el-tooltip
+                    v-if="group.description"
+                    effect="dark"
+                    placement="top"
+                    :content="group.description">
+                    <i class="el-icon-question field-help-icon"></i>
+                  </el-tooltip>
+                </div>
+                <div class="metric-editor-grid">
+                  <div v-for="field in group.fields" :key="group.path + '-editor-' + field.prop" class="metric-editor-item">
+                    <label class="editor-label">{{ field.label }}</label>
+                    <div class="editor-control editor-control-inline">
+                      <el-switch
+                        v-if="field.type === 'boolean'"
+                        :value="Boolean(readConfigValue(editorDraft.config, group.path + '.' + field.prop))"
+                        :disabled="Boolean(field.readonly)"
+                        active-text="开启"
+                        inactive-text="关闭"
+                        @change="writeValue(group.path + '.' + field.prop, $event)" />
+                      <template v-else>
+                        <el-input-number
+                          :value="readConfigValue(editorDraft.config, group.path + '.' + field.prop)"
+                          :disabled="Boolean(field.readonly)"
+                          :min="field.min"
+                          :step="field.step"
+                          controls-position="right"
+                          @change="writeValue(group.path + '.' + field.prop, $event)" />
+                        <span v-if="field.unit" class="unit-text">{{ field.unit }}</span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <el-divider>版本备注</el-divider>
             <el-form-item label="版本备注">
               <el-input v-model.trim="editorDraft.remark" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="说明这次修改目的、适用场景或审批意见" />
@@ -351,11 +421,11 @@
 
 <script>
 import {
-  activatePtdAnalysisConfigVersionApi,
-  getPtdAnalysisConfigApi,
-  getPtdAnalysisConfigEditorApi,
-  getPtdRealtimeRuntimeStatusApi,
-  savePtdAnalysisConfigVersionApi
+  activateUnifiedPtdConfigVersionApi,
+  createUnifiedPtdConfigVersionApi,
+  getUnifiedPtdConfigApi,
+  getUnifiedPtdConfigEditorApi,
+  getUnifiedPtdRealtimeRuntimeStatusApi
 } from '@/api/index';
 import {
   formatDateTime,
@@ -448,6 +518,97 @@ const metricGroups = [
   fields: metricFieldDefs
 }));
 
+const strategyGroups = [
+  {
+    label: '工况软衰减',
+    path: 'softDamping',
+    abbr: 'c(t)',
+    description: '控制工况切换阶段是否保留信号，以及切换期的软衰减系数。',
+    fields: [
+      { label: '启用软衰减', prop: 'enabled', type: 'boolean' },
+      { label: '切换衰减系数', prop: 'activityTransitionFactor', min: 0, step: 0.05 }
+    ]
+  },
+  {
+    label: '动态阈值',
+    path: 'dynamicThreshold',
+    abbr: 'WMAD',
+    description: '控制 PTD 与 PRCD 共用的时间衰减 WMAD、稳定/波动双档 K 与 Huber-M 估计。v4.1 在线链路优先使用因果窗口。',
+    fields: [
+      { label: '启用动态阈值', prop: 'enabled', type: 'boolean' },
+      { label: '半衰期比例', prop: 'halfLifeRatio', min: 0, step: 0.01 },
+      { label: '稳定 K', prop: 'stableKFactor', min: 0, step: 0.1 },
+      { label: '波动 K', prop: 'volatileKFactor', min: 0, step: 0.1 },
+      { label: '波动切换比', prop: 'volatilitySwitchRatio', min: 0, step: 0.05 },
+      { label: 'Huber C', prop: 'huberC', min: 0, step: 0.1 },
+      { label: 'Huber 迭代', prop: 'huberIterations', min: 0, step: 1 },
+      { label: '井段系数', prop: 'wellSectionFactor', min: 0, step: 0.1 }
+    ]
+  },
+  {
+    label: '物理阈值兜底',
+    path: 'absoluteThresholds',
+    abbr: 'ABS',
+    description: '控制立压绝对降幅和池增量绝对量的物理兜底逻辑。',
+    fields: [
+      { label: '启用 SPP 兜底', prop: 'enableSppDropFallback', type: 'boolean' },
+      { label: 'SPP 基线门槛', prop: 'sppBaselineMinMpa', unit: 'MPa', min: 0, step: 0.1 },
+      { label: 'SPP 绝对降幅', prop: 'sppAbsoluteDropMpa', unit: 'MPa', min: 0, step: 0.01 },
+      { label: '启用池增兜底', prop: 'enablePitGainFallback', type: 'boolean' },
+      { label: '池增绝对阈值', prop: 'pitGainAbsoluteThresholdM3', unit: 'm³', min: 0, step: 0.1 }
+    ]
+  },
+  {
+    label: '螺杆钻进识别',
+    path: 'motorDrilling',
+    abbr: 'Motor',
+    description: '用于识别 slide drilling（低 RPM 且泵开）并屏蔽扭矩误报。',
+    fields: [
+      { label: '启用识别', prop: 'enabled', type: 'boolean' },
+      { label: '最大 RPM', prop: 'maxRpm', unit: 'rpm', min: 0, step: 0.1 },
+      { label: '最小总泵冲', prop: 'minPumpSpmTotal', unit: 'spm', min: 0, step: 0.5 }
+    ]
+  },
+  {
+    label: 'PRCD 速率偏离',
+    path: 'prcd',
+    abbr: 'PRCD',
+    description: '控制因果 PRCD 速率链路，包括速率平滑、稳健局部斜率、短脉冲抑制、Holt 双指数平滑和交叉抑制。',
+    fields: [
+      { label: '启用 PRCD', prop: 'enabled', type: 'boolean' },
+      { label: '速率平滑点数', prop: 'rateSmoothPoints', min: 0, step: 1 },
+      { label: '局部斜率点数', prop: 'localSlopePointCount', min: 0, step: 1 },
+      { label: '稳健迭代次数', prop: 'robustIterations', min: 0, step: 1 },
+      { label: 'Huber C', prop: 'huberC', min: 0, step: 0.01 },
+      { label: '短期 Alpha', prop: 'shortAlpha', min: 0, step: 0.05 },
+      { label: '长期 Alpha', prop: 'longAlpha', min: 0, step: 0.05 },
+      { label: '交叉抑制系数', prop: 'crossSuppressFactor', min: 0, step: 0.05 }
+    ]
+  },
+  {
+    label: '在线因果预处理',
+    path: 'preprocessing',
+    abbr: 'Prep',
+    description: '控制在线因果预处理。v4.1 主链路保留局部异常值抑制、局部去趋势和自适应窗口；整段小波/频域滤波只保留配置位，不进入在线主路径。',
+    fields: [
+      { label: '在线高级链路（固定开启）', prop: 'enableAdvancedPipeline', type: 'boolean', readonly: true },
+      { label: 'Grubbs 过滤', prop: 'enableGrubbsFilter', type: 'boolean' },
+      { label: '去线性趋势', prop: 'enableDetrending', type: 'boolean' },
+      { label: '小波去噪（在线关闭）', prop: 'enableWaveletDenoise', type: 'boolean', readonly: true },
+      { label: '频域滤波（在线关闭）', prop: 'enableFrequencyFilter', type: 'boolean', readonly: true },
+      { label: 'Grubbs Sigma', prop: 'grubbsSigmaThreshold', min: 0, step: 0.1 },
+      { label: '小波层数', prop: 'waveletLevels', min: 0, step: 1 },
+      { label: '周期分量数', prop: 'maxPeriodicComponents', min: 0, step: 1 },
+      { label: '周期幅值比', prop: 'periodicAmplitudeRatio', min: 0, step: 0.01 },
+      { label: '最小自适应比', prop: 'adaptiveMinRatio', min: 0, step: 0.05 },
+      { label: '最大自适应比', prop: 'adaptiveMaxRatio', min: 0, step: 0.05 },
+      { label: '熵步长', prop: 'entropyStepSec', unit: 's', min: 0, step: 0.5 },
+      { label: '梯度步长', prop: 'gradientStep', min: 0, step: 0.05 },
+      { label: '熵分箱数', prop: 'entropyBins', min: 0, step: 1 }
+    ]
+  }
+];
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value || {}));
 }
@@ -468,8 +629,8 @@ function buildDefaultRuntimeStatus() {
 function buildDefaultConfigDetail(wellId = '') {
   return normalizeConfigDetail({
     wellId,
-    versionCode: 'ptd-default',
-    versionName: '系统默认配置',
+    versionCode: 'ptd-risk-v4',
+    versionName: '系统默认配置（PTD v4.1 在线因果版）',
     isActive: true,
     isDefaultConfig: true,
     config: {}
@@ -482,6 +643,7 @@ export default {
     return {
       baseFields,
       metricGroups,
+      strategyGroups,
       pageLoading: false,
       previewLoading: false,
       saving: false,
@@ -622,8 +784,8 @@ export default {
 
       try {
         const [editorPayload, runtimePayload] = await Promise.all([
-          getPtdAnalysisConfigEditorApi({ wellId: this.configWellId }),
-          getPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId })
+        getUnifiedPtdConfigEditorApi({ wellId: this.configWellId }),
+        getUnifiedPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId })
         ]);
 
         const editorContext = normalizeConfigEditorResponse(editorPayload);
@@ -659,7 +821,7 @@ export default {
 
       this.previewLoading = true;
       try {
-        const payload = await getPtdAnalysisConfigApi({
+        const payload = await getUnifiedPtdConfigApi({
           wellId: this.configWellId,
           configVersionId: configVersionId || ''
         });
@@ -698,7 +860,7 @@ export default {
       if (targetVersionId && !target.config) {
         this.previewLoading = true;
         try {
-          const payload = await getPtdAnalysisConfigApi({
+        const payload = await getUnifiedPtdConfigApi({
             wellId: this.configWellId,
             configVersionId: targetVersionId
           });
@@ -770,7 +932,7 @@ export default {
 
       this.previewLoading = true;
       try {
-        const payload = await getPtdAnalysisConfigApi({ wellId: this.editorDraft.cloneFromWellId });
+        const payload = await getUnifiedPtdConfigApi({ wellId: this.editorDraft.cloneFromWellId });
         const detail = normalizeConfigDetail(unwrapData(payload));
         this.editorDraft = {
           ...this.editorDraft,
@@ -825,6 +987,10 @@ export default {
         return '-';
       }
 
+      if (field.type === 'boolean') {
+        return value ? '开启' : '关闭';
+      }
+
       if (field.type === 'datetime' || field.path === 'effectiveAt') {
         return formatDateTime(value);
       }
@@ -872,7 +1038,7 @@ export default {
 
       this.saving = true;
       try {
-        const payload = await savePtdAnalysisConfigVersionApi({
+        const payload = await createUnifiedPtdConfigVersionApi({
           wellId: this.configWellId,
           baseConfigVersionId: this.editorDraft.baseConfigVersionId || '',
           cloneFromWellId: this.editorDraft.cloneFromWellId || '',
@@ -902,7 +1068,7 @@ export default {
       }
 
       try {
-        const payload = await getPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId });
+        const payload = await getUnifiedPtdRealtimeRuntimeStatusApi({ wellId: this.configWellId });
         this.runtimeStatus = normalizeRealtimeRuntimeStatus(payload);
       } catch (error) {
         this.runtimeStatus = buildDefaultRuntimeStatus();
@@ -951,7 +1117,7 @@ export default {
 
       this.activatingVersionId = version.configVersionId;
       try {
-        const payload = await activatePtdAnalysisConfigVersionApi({
+        const payload = await activateUnifiedPtdConfigVersionApi({
           wellId: this.configWellId,
           configVersionId: version.configVersionId,
           operator: 'ui',
@@ -1153,6 +1319,10 @@ export default {
 .metric-value-item,
 .metric-editor-item {
   min-width: 0;
+}
+
+.editor-control-inline {
+  align-items: center;
 }
 
 .metric-title-row {

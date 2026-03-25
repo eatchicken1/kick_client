@@ -26,10 +26,10 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item>
-          <el-button type="success" icon="el-icon-video-play" :loading="loading || isStopping" @click="startSimulation">
+          <el-button type="success" icon="el-icon-video-play" :loading="loading || isStopping" @click="startUnifiedPtdRealtime">
             启动流式预警
           </el-button>
-          <el-button type="danger" icon="el-icon-video-pause" :disabled="!isSimulating || isStopping" @click="stopSimulation">
+          <el-button type="danger" icon="el-icon-video-pause" :disabled="!isSimulating || isStopping" @click="stopUnifiedPtdRealtime">
             停止监测
           </el-button>
         </el-form-item>
@@ -40,6 +40,7 @@
           {{ isSimulating ? (waitingForNewData ? '等待新数据' : '运行中') : '未运行' }}
         </el-tag>
         <span>实时数据保留 {{ realtimeRetentionMinutes }} 分钟，时间轴默认展示最后 {{ defaultWindowMinutes }} 分钟，L1 未处理 {{ l1TimeoutMinutes }} 分钟后标记超时。</span>
+        <span>当前前端按 PTD v4.1 在线因果链路展示，设备故障与井漏会先分流，不直接升级为 kick。</span>
         <span v-if="loading && !displayFrames.length">{{ dashboardLoadingText }}</span>
         <span v-if="waitingForNewData">当前已追到表尾，正在持续等待后续实时数据。</span>
         <span v-if="configVersion">配置版本 {{ configVersion }}</span>
@@ -69,13 +70,14 @@
 import * as signalR from '@microsoft/signalr';
 import { Notification } from 'element-ui';
 import PtdRiskDashboard from './PtdRiskDashboard.vue';
-import { getMonitorHubUrl, getPtdAnalysisConfigApi } from '@/api/index';
+import { getMonitorHubUrl, getUnifiedPtdConfigApi } from '@/api/index';
 import {
   buildDefaultStartTime,
   computeSamplingFromFrames,
   formatDateTime,
   normalizeConfigDetail,
   normalizeFrame,
+  normalizePtdProtocolVersionText,
   normalizeRealtimeDelivery
 } from '@/utils/ptdRisk';
 
@@ -83,6 +85,14 @@ const DEFAULT_WINDOW_MINUTES = 20;
 const REALTIME_RETENTION_MINUTES = 60;
 const L1_TIMEOUT_MINUTES = 10;
 const REALTIME_RECONNECT_MAX_MINUTES = 30;
+const HUB_METHOD_START_UNIFIED_PTD_REALTIME = 'StartUnifiedPtdRealtimeAsync';
+const HUB_METHOD_STOP_UNIFIED_PTD_REALTIME = 'StopUnifiedPtdRealtimeAsync';
+const HUB_METHOD_UPDATE_UNIFIED_PTD_PLAYBACK_SPEED = 'UpdateUnifiedPtdPlaybackSpeedAsync';
+const HUB_EVENT_UNIFIED_PTD_REALTIME_FRAME = 'ReceiveUnifiedPtdRealtimeFrame';
+const HUB_EVENT_UNIFIED_PTD_REALTIME_WAITING = 'UnifiedPtdRealtimeWaiting';
+const HUB_EVENT_UNIFIED_PTD_REALTIME_RESUMED = 'UnifiedPtdRealtimeResumed';
+const HUB_EVENT_UNIFIED_PTD_REALTIME_ERROR = 'UnifiedPtdRealtimeError';
+const HUB_EVENT_UNIFIED_PTD_CONFIG_ACTIVATION = 'UnifiedPtdConfigActivationRequested';
 
 const realtimeReconnectPolicy = {
   nextRetryDelayInMilliseconds(context) {
@@ -190,7 +200,7 @@ export default {
       if (this.waitingForNewData && !this.displayFrames.length) {
         return '当前起始时间之后暂无可展示数据，监测链路已进入等待模式，你可以把起始时间往前调整一些。';
       }
-      return '启动流式预警后，这里将只展示后端统一判定结果。';
+      return '启动流式预警后，这里将展示 PTD v4.1 在线因果版的统一风险结果。';
     },
     displayEvents() {
       const referenceMs = this.frames.length ? this.frames[this.frames.length - 1].timestampMs : 0;
@@ -219,17 +229,17 @@ export default {
   watch: {
     currentWellId() {
       this.searchForm.startTime = buildDefaultStartTime(this.$store.state.StartTime);
-      this.loadConfig();
+      this.loadUnifiedPtdConfig();
     }
   },
   mounted() {
-    this.loadConfig();
+    this.loadUnifiedPtdConfig();
   },
   beforeDestroy() {
-    this.stopSimulation({ silent: true });
+    this.stopUnifiedPtdRealtime({ silent: true });
   },
   methods: {
-    async loadConfig() {
+    async loadUnifiedPtdConfig() {
       if (!this.currentWellId) {
         this.configVersion = '';
         this.selectedConfigVersionId = '';
@@ -237,7 +247,7 @@ export default {
       }
 
       try {
-        const response = await getPtdAnalysisConfigApi({ wellId: this.currentWellId });
+        const response = await getUnifiedPtdConfigApi({ wellId: this.currentWellId });
         const normalized = normalizeConfigDetail(response && response.data ? response.data : response);
         this.configVersion = normalized.versionCode || ((normalized.config || {}).version || '');
         this.selectedConfigVersionId = normalized.configVersionId || '';
@@ -416,7 +426,7 @@ export default {
     normalizeWellId(value) {
       return String(value || '').trim().replace(/-/g, '');
     },
-    async handleConfigActivationRequested(payload) {
+    async handleUnifiedPtdConfigActivationRequested(payload) {
       const action = payload && payload.action ? String(payload.action).toUpperCase() : '';
       if (action !== 'RESTART') {
         return;
@@ -436,23 +446,23 @@ export default {
         ? payload.configVersionId
         : this.selectedConfigVersionId;
       this.configVersion = payload && payload.configVersionCode
-        ? payload.configVersionCode
+        ? normalizePtdProtocolVersionText(payload.configVersionCode, '')
         : this.configVersion;
 
       this.$message.warning(
         (payload && payload.message) || '检测配置已切换，当前实时监测会按新版本自动重启'
       );
 
-      await this.stopSimulation({ silent: true });
+      await this.stopUnifiedPtdRealtime({ silent: true });
 
       if (!restartTime) {
         return;
       }
 
       this.searchForm.startTime = restartTime;
-      await this.startSimulation();
+      await this.startUnifiedPtdRealtime();
     },
-    handleRealtimeFrame(payload) {
+    handleUnifiedPtdRealtimeFrame(payload) {
       const delivery = normalizeRealtimeDelivery(payload);
       const frame = delivery && delivery.frame && delivery.frame.timestampMs !== null
         ? delivery.frame
@@ -479,7 +489,7 @@ export default {
       this.waitingForNewData = false;
       this.loading = false;
     },
-    async createConnection() {
+    async createUnifiedPtdHubConnection() {
       const connection = new signalR.HubConnectionBuilder()
         .withUrl(getMonitorHubUrl())
         .withAutomaticReconnect(realtimeReconnectPolicy)
@@ -487,14 +497,14 @@ export default {
       connection.serverTimeoutInMilliseconds = 10 * 60 * 1000;
       connection.keepAliveIntervalInMilliseconds = 15 * 1000;
 
-      connection.on('ReceiveRealtimeData', (payload) => {
+      connection.on(HUB_EVENT_UNIFIED_PTD_REALTIME_FRAME, (payload) => {
         if (this.hubConnection !== connection) {
           return;
         }
-        this.handleRealtimeFrame(payload);
+        this.handleUnifiedPtdRealtimeFrame(payload);
       });
 
-      connection.on('SimulationWaiting', (payload) => {
+      connection.on(HUB_EVENT_UNIFIED_PTD_REALTIME_WAITING, (payload) => {
         if (this.hubConnection !== connection) {
           return;
         }
@@ -516,7 +526,7 @@ export default {
         }
       });
 
-      connection.on('SimulationResumed', (payload) => {
+      connection.on(HUB_EVENT_UNIFIED_PTD_REALTIME_RESUMED, (payload) => {
         if (this.hubConnection !== connection) {
           return;
         }
@@ -531,11 +541,11 @@ export default {
         }
       });
 
-      connection.on('ConfigActivationRequested', async (payload) => {
+      connection.on(HUB_EVENT_UNIFIED_PTD_CONFIG_ACTIVATION, async (payload) => {
         if (this.hubConnection !== connection) {
           return;
         }
-        await this.handleConfigActivationRequested(payload);
+        await this.handleUnifiedPtdConfigActivationRequested(payload);
       });
 
       connection.onreconnecting((error) => {
@@ -559,21 +569,12 @@ export default {
         this.$message.success('实时监测连接已恢复');
       });
 
-      connection.on('SimulationFinished', async (message) => {
-        if (this.hubConnection !== connection) {
-          return;
-        }
-        const endTimeLabel = this.frames.length ? this.frames[this.frames.length - 1].timestampLabel : this.searchForm.startTime;
-        this.$message.info(message || `实时回放已到数据末尾（${endTimeLabel}），并非因发现异常自动中止`);
-        await this.stopSimulation({ silent: true });
-      });
-
-      connection.on('SimulationError', async (message) => {
+      connection.on(HUB_EVENT_UNIFIED_PTD_REALTIME_ERROR, async (message) => {
         if (this.hubConnection !== connection) {
           return;
         }
         this.$message.error(`流式预警异常: ${message}`);
-        await this.stopSimulation({ silent: true });
+        await this.stopUnifiedPtdRealtime({ silent: true });
       });
 
       connection.onclose(async () => {
@@ -581,19 +582,19 @@ export default {
           return;
         }
         this.$message.warning('监测连接已断开');
-        await this.stopSimulation({ silent: true });
+        await this.stopUnifiedPtdRealtime({ silent: true });
       });
 
       await connection.start();
       return connection;
     },
-    buildSimulationConfig() {
+    buildUnifiedPtdRealtimeConfigPayload() {
       return JSON.stringify({
         playbackSpeed: Number(this.searchForm.playbackSpeed) || 1,
         configVersionId: this.selectedConfigVersionId || ''
       });
     },
-    async startSimulation() {
+    async startUnifiedPtdRealtime() {
       if (!this.currentWellId) {
         this.$message.warning('请先选择井号');
         return;
@@ -603,20 +604,20 @@ export default {
         return;
       }
 
-      await this.stopSimulation({ silent: true });
+      await this.stopUnifiedPtdRealtime({ silent: true });
       this.resetState();
       this.loading = true;
       this.loadingMessage = '正在准备首批实时数据，先加载原始曲线与统一风险结果...';
 
       try {
-        await this.loadConfig();
-        const connection = await this.createConnection();
+        await this.loadUnifiedPtdConfig();
+        const connection = await this.createUnifiedPtdHubConnection();
         this.hubConnection = connection;
         await connection.send(
-          'StartRealtimeSimulationAsync',
+          HUB_METHOD_START_UNIFIED_PTD_REALTIME,
           this.currentWellId,
           this.searchForm.startTime,
-          this.buildSimulationConfig()
+          this.buildUnifiedPtdRealtimeConfigPayload()
         );
         this.isSimulating = true;
       } catch (error) {
@@ -633,7 +634,7 @@ export default {
         }
       }
     },
-    async stopSimulation(options = {}) {
+    async stopUnifiedPtdRealtime(options = {}) {
       const { silent = false } = options;
       const connection = this.hubConnection;
       this.hubConnection = null;
@@ -642,7 +643,7 @@ export default {
       if (connection) {
         try {
           if (connection.state === signalR.HubConnectionState.Connected) {
-            await connection.send('StopRealtimeSimulationAsync');
+            await connection.send(HUB_METHOD_STOP_UNIFIED_PTD_REALTIME);
           }
         } catch (error) {
           // ignore stop send error
@@ -672,7 +673,7 @@ export default {
       }
 
       try {
-        await this.hubConnection.send('UpdateSimulationSpeedAsync', this.searchForm.playbackSpeed);
+        await this.hubConnection.send(HUB_METHOD_UPDATE_UNIFIED_PTD_PLAYBACK_SPEED, this.searchForm.playbackSpeed);
         this.$message.success(`回放速率已切换为 ${this.searchForm.playbackSpeed}x`);
       } catch (error) {
         this.$message.error('回放速率切换失败');

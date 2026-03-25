@@ -22,7 +22,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="el-icon-search" :loading="loading" :disabled="!currentWellId" @click="fetchData">
-            启动历史分析
+            执行历史复盘
           </el-button>
         </el-form-item>
         <el-form-item label="跳转时间">
@@ -43,6 +43,8 @@
 
       <div class="status-row">
         <span>单次最大回放区间 {{ maxHistoryRangeHours }} 小时</span>
+        <span>历史页会按 PTD v4.1 在线因果链路，对你选定的时间窗重新拉取原始数据并重跑统一风险引擎。</span>
+        <span>它用于复盘、参数验证和与实时结果对照，不会像实时页那样自动跟随新数据；有新数据时需要手动重新执行历史复盘。</span>
         <span v-if="configVersion">配置版本 {{ configVersion }}</span>
       </div>
     </el-card>
@@ -66,15 +68,15 @@
       :show-event-table-inline="false"
       :default-window-minutes="20"
       :show-formation-info="false"
-      loading-text="正在分析历史区间并生成统一风险轨迹，请稍候..."
-      empty-text="请选择时间范围后执行历史分析。"
+      loading-text="正在重跑所选时间窗的 PTD v4.1 在线因果链路，用于历史复盘与参数验证，请稍候..."
+      empty-text="请选择时间范围后执行历史复盘，页面会按 PTD v4.1 统一逻辑展示静态复盘结果。"
       @status-updated="handleStatusUpdated" />
   </div>
 </template>
 
 <script>
 import PtdRiskDashboard from './PtdRiskDashboard.vue';
-import { getPtdAnalysisHistoryApi } from '@/api/index';
+import { getUnifiedPtdHistoryApi } from '@/api/index';
 import {
   buildDefaultTimeRange,
   normalizeHistoryResponse
@@ -132,7 +134,7 @@ export default {
       this.loading = true;
 
       try {
-        const response = await getPtdAnalysisHistoryApi({
+        const response = await getUnifiedPtdHistoryApi({
           wellId: this.currentWellId,
           startTime: this.searchForm.timeRange[0].replace(' ', 'T'),
           endTime: this.searchForm.timeRange[1].replace(' ', 'T')
@@ -147,10 +149,10 @@ export default {
         if (!this.frames.length) {
           this.$message.info('当前时间范围内未查询到有效数据');
         } else {
-          this.$message.success(`历史分析完成，共返回 ${this.frames.length} 个采样点`);
+          this.$message.success(`历史复盘完成，共返回 ${this.frames.length} 个采样点`);
         }
       } catch (error) {
-        this.$message.error('历史分析失败');
+        this.$message.error('历史复盘失败');
       } finally {
         this.loading = false;
       }

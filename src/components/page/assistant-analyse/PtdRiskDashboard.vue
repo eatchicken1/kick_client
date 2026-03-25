@@ -22,7 +22,7 @@
             </div>
             <div class="summary-meta">
               <span>井号 {{ currentWellId || '-' }}</span>
-              <span>工况 {{ latestFrame ? (latestFrame.activityBucket || latestFrame.activityCode || '-') : '-' }}</span>
+              <span>工况 {{ latestFrame ? getActivityBucketDisplay(latestFrame) : '-' }}</span>
               <span>井深 {{ formatDepthValue(latestFrame && latestFrame.depth) }}</span>
               <span>钻头深度 {{ formatDepthValue(latestFrame && latestFrame.bitDepth) }}</span>
               <span v-if="showFormationInfo">层位 {{ latestFrame && latestFrame.formationName ? latestFrame.formationName : '-' }}</span>
@@ -96,18 +96,18 @@
           <span>异常事件闭环</span>
         </div>
 
-        <el-collapse v-if="groupEvents && groupedEventGroups.length" v-model="expandedGroupNames">
-          <el-collapse-item v-for="group in groupedEventGroups" :key="group.name" :name="group.name">
+          <el-collapse v-if="groupEvents && groupedEventGroups.length" v-model="expandedGroupNames">
+            <el-collapse-item v-for="group in groupedEventGroups" :key="group.key" :name="group.key">
             <template slot="title">
               <div class="group-title-row">
-                <span class="group-title">{{ group.name }}</span>
+                <span class="group-title">{{ group.title }}</span>
                 <div class="group-meta">
-                  <el-tag size="mini" effect="dark" :type="getSeverityMetaFor(group.maxSeverityCode, group.maxSeverityLevel).tagType">{{ group.maxSeverityCode }}</el-tag>
+                  <el-tag size="mini" effect="dark" :type="getSeverityMetaFor(group.severityCode, group.severityLevel).tagType">{{ group.severityCode }}</el-tag>
                   <span>{{ group.events.length }} 个</span>
                 </div>
               </div>
             </template>
-            <el-table v-if="isGroupExpanded(group.name)" :data="group.events" :row-key="getEventRowKey" border stripe size="small" :row-class-name="getEventRowClassName">
+            <el-table v-if="isGroupExpanded(group.key)" :data="group.events" :row-key="getEventRowKey" border stripe size="small" :row-class-name="getEventRowClassName">
               <el-table-column label="等级" width="90" align="center">
                 <template slot-scope="{ row }">
                   <el-tag size="small" effect="dark" :type="getSeverityMetaFor(row.severity, row.severityLevel).tagType">{{ row.severity }}</el-tag>
@@ -183,17 +183,17 @@
       </div>
 
       <el-collapse v-if="groupEvents && groupedEventGroups.length" v-model="expandedGroupNames">
-        <el-collapse-item v-for="group in groupedEventGroups" :key="group.name" :name="group.name">
+        <el-collapse-item v-for="group in groupedEventGroups" :key="group.key" :name="group.key">
           <template slot="title">
             <div class="group-title-row">
-              <span class="group-title">{{ group.name }}</span>
+              <span class="group-title">{{ group.title }}</span>
               <div class="group-meta">
-                <el-tag size="mini" effect="dark" :type="getSeverityMetaFor(group.maxSeverityCode, group.maxSeverityLevel).tagType">{{ group.maxSeverityCode }}</el-tag>
+                <el-tag size="mini" effect="dark" :type="getSeverityMetaFor(group.severityCode, group.severityLevel).tagType">{{ group.severityCode }}</el-tag>
                 <span>{{ group.events.length }} 个</span>
               </div>
             </div>
           </template>
-          <el-table v-if="isGroupExpanded(group.name)" :data="group.events" :row-key="getEventRowKey" border stripe size="small" :row-class-name="getEventRowClassName">
+          <el-table v-if="isGroupExpanded(group.key)" :data="group.events" :row-key="getEventRowKey" border stripe size="small" :row-class-name="getEventRowClassName">
             <el-table-column label="等级" width="90" align="center">
               <template slot-scope="{ row }">
                 <el-tag size="small" effect="dark" :type="getSeverityMetaFor(row.severity, row.severityLevel).tagType">{{ row.severity }}</el-tag>
@@ -259,7 +259,7 @@
       title="风险树"
       append-to-body>
       <div class="risk-tree-caption">
-        这里展示的是当前 PTD 统一预警的主决策路径。页面已经改为“缩放联动、悬浮解耦”，所以看树时可以回到对应曲线逐项核对。
+        这里展示的是当前 PTD v4.1 在线因果版的主决策路径。页面已经和后端一起升级到“先分流设备/井漏，再升级 kick”，所以看树时可以回到对应曲线逐项核对。
       </div>
 
       <div class="risk-flow">
@@ -271,7 +271,7 @@
       </div>
 
       <div class="risk-tree-grid">
-        <div v-for="branch in riskTreeBranches" :key="branch.level" class="risk-tree-branch">
+        <div v-for="branch in riskTreeBranches" :key="branch.key || branch.level" class="risk-tree-branch">
           <div class="risk-tree-branch-head">
             <el-tag size="small" effect="dark" :type="branch.tagType">{{ branch.level }}</el-tag>
             <span>{{ branch.title }}</span>
@@ -295,6 +295,10 @@
           <span>{{ formatDuration(selectedEventView.durationSec) }}</span>
           <span v-if="selectedEventView.configVersion">配置 {{ selectedEventView.configVersion }}</span>
         </div>
+        <div class="detail-risk-banner">
+          <el-tag size="mini" effect="plain" :type="selectedRiskTypeMeta.tagType">{{ selectedRiskTypeMeta.family }}</el-tag>
+          <span>{{ selectedRiskTypeMeta.summary }}</span>
+        </div>
         <div v-if="showDetailActionRow" class="action-row dialog-actions compact-actions">
           <el-button v-if="showEventLocateAction" size="mini" type="primary" plain @click="jumpToEvent(selectedEventView)">定位区间</el-button>
           <el-button v-if="allowStatusUpdate" size="mini" type="warning" plain :disabled="isStatusActionDisabled(selectedEventView, 'ACKNOWLEDGED')" @click="updateStatus(selectedEventView, 'ACKNOWLEDGED')">确认</el-button>
@@ -307,7 +311,7 @@
             <div class="summary-label">事件快照</div>
             <div class="summary-meta">
               <span>时间 {{ detailSnapshot.timestampLabel }}</span>
-              <span>工况 {{ detailSnapshot.activityBucket || detailSnapshot.activityCode || '-' }}</span>
+              <span>工况 {{ getActivityBucketDisplay(detailSnapshot) }}</span>
               <span>井深 {{ formatDepthValue(detailSnapshot.depth) }}</span>
               <span>钻头深度 {{ formatDepthValue(detailSnapshot.bitDepth) }}</span>
               <span v-if="showFormationInfo">层位 {{ detailSnapshot.formationName || '-' }}</span>
@@ -324,6 +328,15 @@
               <el-table-column label="PTD" width="110" align="center">
                 <template slot-scope="{ row }">{{ formatNumber(row.ptdValue, 3) }}</template>
               </el-table-column>
+              <el-table-column label="PRCD" width="110" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.prcdValue, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="PRCD阈值" width="120" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.prcdUpperThreshold, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="自适应窗(s)" width="120" align="center">
+                <template slot-scope="{ row }">{{ formatNumber(row.adaptiveWindowSeconds, 0) }}</template>
+              </el-table-column>
               <el-table-column label="方向" width="90" align="center">
                 <template slot-scope="{ row }">
                   <el-tag size="mini" :type="directionTagType(row.direction)">{{ directionText(row.direction) }}</el-tag>
@@ -332,6 +345,11 @@
               <el-table-column label="异常" width="90" align="center">
                 <template slot-scope="{ row }">
                   <el-tag size="mini" :type="row.isAnomaly ? 'danger' : 'info'">{{ row.isAnomaly ? '是' : '否' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="PRCD异常" width="100" align="center">
+                <template slot-scope="{ row }">
+                  <el-tag size="mini" :type="row.isPrcdAnomaly ? 'warning' : 'info'">{{ row.isPrcdAnomaly ? '是' : '否' }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="note" label="说明" min-width="220" />
@@ -398,8 +416,8 @@
 
 <script>
 import * as echarts from 'echarts';
-import { getPtdEventDetailApi, updatePtdEventStatusApi } from '@/api/index';
-import { canTransitionPtdStatus, formatDateTime, formatDuration, formatNumber, getSeverityMeta, getStatusMeta, normalizeEventDetailResponse } from '@/utils/ptdRisk';
+import { getUnifiedPtdEventDetailApi, updateUnifiedPtdEventStatusApi } from '@/api/index';
+import { canTransitionPtdStatus, formatDateTime, formatDuration, formatNumber, getActivityBucketLabel, getRiskTypeMeta, getSeverityMeta, getStatusMeta, normalizeEventDetailResponse } from '@/utils/ptdRisk';
 
 const CHART_HEADER_TOP = 16;
 const CHART_HEADER_HEIGHT = 22;
@@ -419,50 +437,72 @@ const CHART_LAYOUTS = [
 ];
 
 const RISK_DECISION_FLOW = [
-  { title: '第 1 步：门控先行', desc: '先检查 gap reset、工况静默、恒泵稳定等门控。门控没打开时，页面保持 L0，不会只因瞬时尖峰升级。' },
-  { title: '第 2 步：单参候选', desc: '出口流量、立压、池体积、机械参数、全烃、套压等任一指标持续异常，进入 L1 候选。' },
-  { title: '第 3 步：协同候选', desc: '如果出现“流量 + 压力”“流量 + 池增量”或“流量差积分 + 气测/套压”这类协同证据，才具备升级到 L2 的资格。' },
-  { title: '第 4 步：确认溢流', desc: '只有 confirmCandidate 成立，并且出现停泵仍回流或持续失衡足够久，才会被提升到 L3。' }
+  { title: '第 1 步：在线因果预处理', desc: '先走 v4.1 在线因果链路，只使用当前及历史样本完成去异常、去趋势、PTD 与 PRCD 计算，避免历史回放和实时监测语义不一致。' },
+  { title: '第 2 步：门控与单参前兆', desc: 'gap reset、恒泵稳定、工况切换软衰减先做门控；门控通过后，PTD 绝对偏离或 PRCD 速率偏离都可以进入 L1 先导预警。' },
+  { title: '第 3 步：先分流设备与井漏', desc: '钻具刺漏、钻头水眼掉落、憋螺杆和井漏会先从正向流入链路分流，前端按设备/漏失事件展示，并封顶在 L1。' },
+  { title: '第 4 步：只让正向流入协同升级', desc: '只有“流量 + 压力”“流量 + 池增量”“流量加速 + 立压减速”“气测加速 + 流量加速”这类正向协同，才允许升级到 L2。' },
+  { title: '第 5 步：IADC 确认', desc: '最终只有池增量、流量差积分与停泵回流等确认链持续成立，才会提升到 L3。' }
 ];
 
 const RISK_TREE_BRANCHES = [
   {
+    key: 'l0',
     level: 'L0',
     title: '不报警 / 保持观察',
     tagType: 'info',
-    code: 'gate closed / duration not enough',
-    trigger: '门控未开、持续时间不足，或证据无法形成有效组合。',
+    code: 'gate closed / duration not enough / causal baseline holds',
+    trigger: '门控未开、持续时间不足，或当前偏离尚不足以穿透因果阈值。',
     rules: [
-      '处于 gap reset、工况切换静默期，或恒泵条件没有满足。',
-      '单参虽然有波动，但没有连续达到当前配置要求的时长。',
-      '协同关系不成立，仍判为正常或继续观察。'
+      '处于 gap reset、恒泵门控未开启，或仍在工况切换软衰减窗口内。',
+      '当前只有短脉冲或尖峰，已被 v4.1 的因果 PRCD 抑制，不直接放大成异常。',
+      '协同关系不成立，页面继续保持观察而不会强行升级。'
     ]
   },
   {
+    key: 'l1-kick',
     level: 'L1',
     title: '先导预警',
     tagType: 'warning',
-    code: 'singleCandidate / surfaceOperation / transitionSppDrop',
-    trigger: '单参候选、地面操作兜底，或工况切换期立压骤降，持续超过 L1MinDurationSec。',
+    code: 'singleCandidate / PRCD precursor / transition drop',
+    trigger: '单参 PTD、PRCD 前兆、地面操作兜底或切换期立压骤降，持续超过 L1MinDurationSec。',
     rules: [
-      '出口流量、立压、池体积、钩载、扭矩、钻时中任一主证据持续异常。',
-      '只见池体积增加但缺少协同证据时，会以“疑似地面操作/加泥”先报 L1。',
-      '工况切换后仍处于恒泵段，若立压快速下挫，也会作为 L1 前置信号保留。'
+      '出口流量、立压、池量、全烃、套压或机械参数出现持续偏离，会先进入 L1 观察。',
+      '全烃和出口流量的 PRCD 速率偏离能先于绝对值穿阈亮起，用来识别 5 到 15 分钟的前兆窗口。',
+      '只见池量抬升但缺少正向流入协同，会以“疑似地面操作/加泥”先报 L1。',
+      '切换期立压骤降会作为穿透软衰减的前置信号保留。'
     ]
   },
   {
+    key: 'l1-fault',
+    level: 'L1',
+    title: '设备/井漏分流',
+    tagType: 'info',
+    code: 'fault or loss branch first',
+    trigger: '命中设备故障或井漏特征时，系统先分流为 L1 故障/漏失事件，不参与 kick 升级。',
+    rules: [
+      '钻具刺漏：立压下降 + 出口流量下降，但池量、气测、套压没有正向协同。',
+      '钻头水眼掉落：立压骤降 + 流量跃升，但缺少池增、气测和套压协同。',
+      '憋螺杆：滑动钻进中立压抬升、扭矩抬升、钻时下降。',
+      '井漏：出口流量和池量同步下降，前端按漏失链路展示并封顶 L1。'
+    ]
+  },
+  {
+    key: 'l2',
     level: 'L2',
     title: '协同预警',
     tagType: 'danger',
-    code: 'multiCandidate',
-    trigger: '多参数协同候选成立，并持续超过 L2MinDurationSec。',
+    code: 'positive influx multiCandidate',
+    trigger: '只有正向流入协同候选成立，并持续超过 L2MinDurationSec，才允许进入 L2。',
     rules: [
       '出口流量升高 + 立压下降。',
       '出口流量升高 + 池增量持续。',
+      '流量加速 + 立压减速，用来识别气侵早期窗口。',
+      '气测与流量同步加速，弥补绝对值尚未越阈的前兆场景。',
       '流量差积分持续为正 + 全烃或套压协同抬升。'
     ]
   },
   {
+    key: 'l3',
     level: 'L3',
     title: '确认预警',
     tagType: 'danger',
@@ -476,21 +516,8 @@ const RISK_TREE_BRANCHES = [
   }
 ];
 
-const RISK_TYPE_FALLBACK_MAP = {
-  flow_high: '出口流量持续异常',
-  spp_low: '立管压力持续异常',
-  pool_high: '总池体积持续异常',
-  pit_gain: '池增量持续异常',
-  gas_high: '全烃持续异常',
-  choke_high: '套压持续异常',
-  torque_low: '扭矩持续异常',
-  rop_low: '钻时持续异常',
-  hook_high: '钩载持续异常',
-  spp_transition_drop: '工况切换期立压骤降'
-};
-
 function metricSeriesState() {
-  return { raw: [], baseline: [], ptd: [], upper: [], lower: [], anomalies: [] };
+  return { raw: [], baseline: [], ptd: [], upper: [], lower: [], anomalies: [], prcdAnomalies: [] };
 }
 
 function valid(value) {
@@ -528,7 +555,7 @@ export default {
     },
     computed: {
     hasData() { return this.frames && this.frames.length > 0; },
-    pageModeLabel() { return this.pageMode === 'realtime' ? '实时统一风险判定' : '历史统一风险回放'; },
+    pageModeLabel() { return this.pageMode === 'realtime' ? '实时统一风险判定' : '历史统一风险复盘'; },
     latestFrame() { return this.hasData ? this.frames[this.frames.length - 1] : null; },
     earliestFrame() { return this.hasData ? this.frames[0] : null; },
     timeSpanMs() { return this.hasData ? Math.max(0, this.latestFrame.timestampMs - this.earliestFrame.timestampMs) : 0; },
@@ -539,24 +566,34 @@ export default {
     groupedEventGroups() {
       const groups = {};
       this.sortedEvents.forEach((item) => {
-        const key = this.getDisplayRiskType(item) || '未分类';
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(item);
+        const severityMeta = getSeverityMeta(item.severity, item.severityLevel);
+        const title = this.getDisplayRiskType(item) || '未分类';
+        const key = `${severityMeta.code}::${title}`;
+        if (!groups[key]) {
+          groups[key] = {
+            key,
+            title,
+            severityCode: severityMeta.code,
+            severityLevel: severityMeta.level,
+            events: []
+          };
+        }
+        groups[key].events.push(item);
       });
-      return Object.keys(groups)
-        .map((key) => {
-          const events = groups[key].slice().sort((a, b) => (a.startTimeMs || 0) - (b.startTimeMs || 0) || (b.severityLevel || 0) - (a.severityLevel || 0));
-          const maxSeverityLevel = events.reduce((max, item) => Math.max(max, item.severityLevel || 0), 0);
+      return Object.values(groups)
+        .map((group) => {
+          const events = group.events.slice().sort((a, b) => (a.startTimeMs || 0) - (b.startTimeMs || 0) || (b.severityLevel || 0) - (a.severityLevel || 0));
           const latestStartTime = events.reduce((max, item) => Math.max(max, item.startTimeMs || 0), 0);
           return {
-            name: key,
+            key: group.key,
+            title: group.title,
             events,
-            maxSeverityLevel,
-            maxSeverityCode: `L${maxSeverityLevel}`,
+            severityLevel: group.severityLevel,
+            severityCode: group.severityCode,
             latestStartTime
           };
         })
-        .sort((a, b) => b.maxSeverityLevel - a.maxSeverityLevel || b.latestStartTime - a.latestStartTime || a.name.localeCompare(b.name, 'zh-Hans-CN'));
+        .sort((a, b) => b.severityLevel - a.severityLevel || b.latestStartTime - a.latestStartTime || a.title.localeCompare(b.title, 'zh-Hans-CN'));
     },
     activeEvents() { return this.sortedEvents.filter(item => item.isActive); },
     highlightEvent() {
@@ -600,13 +637,16 @@ export default {
         return this.sortedEvents.find(item => item.eventId === this.selectedEventId) || this.highlightEvent;
       },
       selectedEventView() { return this.selectedEventDetail || this.selectedEvent; },
+      selectedRiskTypeMeta() {
+        return this.selectedEventView ? this.resolveRiskTypeMeta(this.selectedEventView) : { label: '正常', family: '观察', tagType: 'info', summary: '暂无可展示的风险事件。' };
+      },
       expandedGroupLookup() {
         if (!this.groupEvents) return {};
-        const names = Array.isArray(this.expandedGroupNames)
+        const groupKeys = Array.isArray(this.expandedGroupNames)
           ? this.expandedGroupNames
           : [this.expandedGroupNames].filter(Boolean);
-        return names.reduce((acc, name) => {
-          acc[name] = true;
+        return groupKeys.reduce((acc, key) => {
+          acc[key] = true;
           return acc;
         }, {});
       },
@@ -675,6 +715,7 @@ export default {
           metrics[metricKey].upper.push([timePoint, metric.upperThreshold]);
           metrics[metricKey].lower.push([timePoint, metric.lowerThreshold]);
           metrics[metricKey].anomalies.push(metric.isAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
+          metrics[metricKey].prcdAnomalies.push(metric.isPrcdAnomaly ? [timePoint, metric.originalValue] : [timePoint, null]);
         });
       });
       return { metrics, severity, newEvents, frameMap };
@@ -723,18 +764,18 @@ export default {
     getSeverityMetaFor(severity, level) { return getSeverityMeta(severity, level); },
     getStatusMetaFor(status) { return getStatusMeta(status); },
     getEventRowKey(row) { return row.eventId || row.recordId || `${row.startTimeMs || 0}-${row.riskType || ''}`; },
-    getEvidenceRiskType(evidenceItems) {
-      const evidence = Array.isArray(evidenceItems) ? evidenceItems : [];
-      const primary = evidence.find(item => item && item.code && RISK_TYPE_FALLBACK_MAP[item.code]);
-      return primary ? RISK_TYPE_FALLBACK_MAP[primary.code] : '';
+    resolveRiskTypeMeta(item) {
+      if (!item) {
+        return { label: '正常', family: '观察', tagType: 'info', summary: '暂无可展示的风险事件。' };
+      }
+      return getRiskTypeMeta(item.riskType, item.evidence || []);
+    },
+    getActivityBucketDisplay(item) {
+      if (!item) return '-';
+      return getActivityBucketLabel(item.activityBucket, item.activityCode);
     },
     getDisplayRiskType(item) {
-      if (!item) return '-';
-      const fallbackRiskType = this.getEvidenceRiskType(item.evidence || []);
-      if (!item.riskType || item.riskType === '单参数持续异常' || (item.riskType === '总池体积持续异常' && fallbackRiskType)) {
-        return fallbackRiskType || item.riskType || '正常';
-      }
-      return item.riskType;
+      return this.resolveRiskTypeMeta(item).label;
     },
     ensureSelectedEvent() {
       const exists = this.selectedEventId && this.sortedEvents.some(item => item.eventId === this.selectedEventId);
@@ -742,12 +783,12 @@ export default {
     },
     ensureExpandedGroups() {
       if (!this.groupEvents) return;
-      const names = this.groupedEventGroups.map(item => item.name);
-      this.expandedGroupNames = this.expandedGroupNames.filter(item => names.includes(item));
+      const groupKeys = this.groupedEventGroups.map(item => item.key);
+      this.expandedGroupNames = this.expandedGroupNames.filter(item => groupKeys.includes(item));
       if (!this.expandedGroupNames.length) {
         this.expandedGroupNames = this.groupedEventGroups
-          .filter(item => item.maxSeverityLevel >= 2)
-          .map(item => item.name);
+          .filter(item => item.severityLevel >= 2)
+          .map(item => item.key);
       }
     },
     isGroupExpanded(name) {
@@ -905,7 +946,7 @@ export default {
       if (!eventItem.recordId) return;
       this.detailLoading = true;
       try {
-        const response = await getPtdEventDetailApi({ recordId: eventItem.recordId });
+        const response = await getUnifiedPtdEventDetailApi({ recordId: eventItem.recordId });
         const detail = normalizeEventDetailResponse(response && response.data ? response.data : response);
         this.selectedEventDetail = detail.event;
         this.selectedEventActionLogs = detail.actionLogs;
@@ -1032,7 +1073,7 @@ export default {
       this.$set(this.statusLoadingMap, eventItem.eventId, true);
       this.$emit('status-updated', { eventId: eventItem.eventId, recordId: eventItem.recordId, status });
       try {
-        const response = await updatePtdEventStatusApi({ recordId: eventItem.recordId, analysisRunId: eventItem.analysisRunId, eventId: eventItem.eventId, status });
+        const response = await updateUnifiedPtdEventStatusApi({ recordId: eventItem.recordId, analysisRunId: eventItem.analysisRunId, eventId: eventItem.eventId, status });
         const nextStatus = response && response.data && response.data.status ? response.data.status : status;
         if (nextStatus !== status) {
           this.$emit('status-updated', { eventId: eventItem.eventId, recordId: eventItem.recordId, status: nextStatus });
@@ -1220,7 +1261,7 @@ export default {
       const frame = this.dashboardDataset.frameMap[axisValue];
       const lines = [formatDateTime(axisValue)];
       if (frame) {
-        lines.push(`工况: ${frame.activityBucket || frame.activityCode || '-'}`);
+        lines.push(`工况: ${this.getActivityBucketDisplay(frame)}`);
         lines.push(`风险: ${frame.severity} ${this.getDisplayRiskType(frame)}`);
         lines.push(`井深: ${this.formatDepthValue(frame.depth)}`);
         lines.push(`钻头深度: ${this.formatDepthValue(frame.bitDepth)}`);
@@ -1266,7 +1307,7 @@ export default {
     buildMetricOption(layout) {
       const series = this.dashboardDataset.metrics[layout.metricKey];
       const unit = this.metricUnit(layout.metricKey);
-      return this.buildBaseOption({ title: { text: layout.title }, tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) }, yAxis: [this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies], 'left', 0, true), this.buildValueAxis('PTD / MAD', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false)], series: [this.buildLineSeries({ name: '原值', yAxisIndex: 0, lineStyle: { width: 2, color: layout.color }, itemStyle: { color: layout.color }, markArea: { silent: true, data: this.chartMarkAreas }, data: series.raw }), this.buildLineSeries({ name: '基线', yAxisIndex: 0, lineStyle: { width: 1, type: 'dashed', color: '#64748b' }, itemStyle: { color: '#64748b' }, data: series.baseline }), this.buildLineSeries({ name: 'PTD', yAxisIndex: 1, lineStyle: { width: 1.5, color: '#9333ea' }, itemStyle: { color: '#9333ea' }, data: series.ptd }), this.buildLineSeries({ name: '上阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#dc2626' }, itemStyle: { color: '#dc2626' }, data: series.upper }), this.buildLineSeries({ name: '下阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#2563eb' }, itemStyle: { color: '#2563eb' }, data: series.lower }), this.buildScatterSeries({ name: '异常点', yAxisIndex: 0, symbolSize: 7, itemStyle: { color: '#dc2626' }, data: series.anomalies })] });
+      return this.buildBaseOption({ title: { text: layout.title }, tooltip: { trigger: 'axis', formatter: params => this.tooltipFormatter(params) }, yAxis: [this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies, series.prcdAnomalies], 'left', 0, true), this.buildValueAxis('PTD / 阈值', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false)], series: [this.buildLineSeries({ name: '原值', yAxisIndex: 0, lineStyle: { width: 2, color: layout.color }, itemStyle: { color: layout.color }, markArea: { silent: true, data: this.chartMarkAreas }, data: series.raw }), this.buildLineSeries({ name: '基线', yAxisIndex: 0, lineStyle: { width: 1, type: 'dashed', color: '#64748b' }, itemStyle: { color: '#64748b' }, data: series.baseline }), this.buildLineSeries({ name: 'PTD', yAxisIndex: 1, lineStyle: { width: 1.5, color: '#9333ea' }, itemStyle: { color: '#9333ea' }, data: series.ptd }), this.buildLineSeries({ name: '上阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#dc2626' }, itemStyle: { color: '#dc2626' }, data: series.upper }), this.buildLineSeries({ name: '下阈', yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed', color: '#2563eb' }, itemStyle: { color: '#2563eb' }, data: series.lower }), this.buildScatterSeries({ name: '异常点', yAxisIndex: 0, symbolSize: 7, itemStyle: { color: '#dc2626' }, data: series.anomalies }), this.buildScatterSeries({ name: 'PRCD异常', yAxisIndex: 0, symbolSize: 8, symbol: 'diamond', itemStyle: { color: '#f59e0b' }, data: series.prcdAnomalies })] });
     },
     buildCompositeOption(layout) {
       const yAxis = layout.seriesDefs.map(item => this.buildValueAxis(item.axisName || item.name, item.color, [this.dashboardDataset.metrics[item.metricKey].raw], item.position || 'left', item.offset || 0, item.position !== 'right' || !item.offset));
@@ -1296,8 +1337,8 @@ export default {
         return {
           dataZoom: this.buildZoomPatch(),
           yAxis: [
-            this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies], 'left', 0, true),
-            this.buildValueAxis('PTD / MAD', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false)
+            this.buildValueAxis(unit ? `原值 (${unit})` : '原值', layout.color, [series.raw, series.baseline, series.anomalies, series.prcdAnomalies], 'left', 0, true),
+            this.buildValueAxis('PTD / 阈值', '#9333ea', [series.ptd, series.upper, series.lower], 'right', 0, false)
           ]
         };
       }
@@ -1450,6 +1491,7 @@ export default {
 .group-title { font-weight: 600; }
 .dialog-meta, .dialog-actions { margin-bottom: 12px; }
 .dialog-actions { justify-content: flex-start; }
+.detail-risk-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -2px 0 12px; padding: 10px 12px; border-radius: 10px; background: #f8fafc; color: #334155; line-height: 1.7; }
 .compact-actions .el-button--mini { padding: 6px 10px; }
 .risk-tree-caption { color: #475569; line-height: 1.7; }
 .risk-flow { margin-top: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
